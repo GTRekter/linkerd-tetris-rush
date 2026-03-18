@@ -55,6 +55,10 @@ rules:
     resources: ["httproutes"]
     resourceNames: ["{{ include "tetris.name" . }}-api"]
     verbs: ["get", "patch", "update"]
+  # Authorization policy: manage Server and AuthorizationPolicy resources
+  - apiGroups: ["policy.linkerd.io"]
+    resources: ["servers", "authorizationpolicies"]
+    verbs: ["get", "create", "patch", "update", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

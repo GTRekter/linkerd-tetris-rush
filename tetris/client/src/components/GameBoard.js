@@ -1,4 +1,3 @@
-import { PIECE_COLORS } from '../constants/pieces';
 import { ghostY } from '../services/gameEngine';
 
 const BOARD_W = 10;

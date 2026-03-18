@@ -82,7 +82,7 @@ const PlayerPage = () => {
                 />
 
                 <PieceSidebar
-                    lastPieceMeta={game.lastPieceMeta}
+                    lastPieceMeta={game.nextPieceMeta}
                     feed={game.feed}
                 />
             </div>

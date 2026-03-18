@@ -69,7 +69,6 @@ const TrafficCanvas = ({ clusters, particlesRef, canvasRef }) => {
                     }
                     ctx.font = '12px system-ui';
                     ctx.textAlign = 'center';
-                    ctx.fillText(c.mtls_enabled ? '🔒' : '🔓', cx, cy - 8);
                     ctx.fillStyle = c.info.color || '#666';
                     ctx.font = 'bold 9px system-ui';
                     ctx.textAlign = 'center';

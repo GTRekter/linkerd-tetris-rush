@@ -592,6 +592,37 @@ app.post('/api/admin/toggle-mtls', async (req, res) => {
     const mapping = { mtls_enabled: cur ? '0' : '1' };
     if (!cur) mapping.interceptor_active = '0';
     await redis.hset(k(c, 'game:state'), ...Object.entries(mapping).flat());
+
+    // Patch the tetris-api deployment linkerd.io/inject annotation
+    const injectValue = cur ? 'disabled' : 'enabled';
+    if (c === CLUSTER_NAME) {
+      try {
+        const creds = k8sCreds();
+        await k8sRequest('PATCH',
+          `/apis/apps/v1/namespaces/${creds.namespace}/deployments/${DEPLOYMENT_NAME}`,
+          {
+            spec: {
+              template: {
+                metadata: {
+                  annotations: {
+                    'linkerd.io/inject': injectValue,
+                  },
+                },
+              },
+            },
+          }
+        );
+      } catch (k8sErr) {
+        console.error('k8s mTLS annotation patch failed:', k8sErr.message);
+      }
+    } else {
+      try {
+        await proxyScale(c, '/api/admin/toggle-mtls', req.body);
+      } catch (proxyErr) {
+        console.error('remote mTLS annotation patch failed:', proxyErr.message);
+      }
+    }
+
     await pushLog(c, `mTLS ${!cur ? 'enabled' : 'disabled'}`);
     res.json({ mtls_enabled: !cur });
   } catch (err) {
@@ -622,13 +653,33 @@ app.post('/api/admin/set-auth-policy', async (req, res) => {
     await redis.hset(k(c, 'game:state'), 'auth_policy_enabled', enabled ? '1' : '0');
     await redis.hset(k(c, 'game:state'), 'auth_policy_allowed_users', JSON.stringify(allowedUsers));
 
+    // Always include dashboard-api and dashboard-frontend in the policy
+    const ALWAYS_ALLOWED = ['dashboard-api', 'dashboard-frontend'];
+    const allAllowed = [...new Set([...ALWAYS_ALLOWED, ...allowedUsers])];
+
     if (enabled) {
-      // Deploy AuthorizationPolicy + Server via k8s API
+      // Deploy Server + AuthorizationPolicy and set default inbound to deny
       try {
         const creds = k8sCreds();
         const ns = creds.namespace;
 
-        // Create/update Server resource
+        // Set default-inbound-policy to deny on tetris-api deployment
+        await k8sRequest('PATCH',
+          `/apis/apps/v1/namespaces/${ns}/deployments/${DEPLOYMENT_NAME}`,
+          {
+            spec: {
+              template: {
+                metadata: {
+                  annotations: {
+                    'config.linkerd.io/default-inbound-policy': 'deny',
+                  },
+                },
+              },
+            },
+          }
+        );
+
+        // Create/update Server resource for tetris-api
         const server = {
           apiVersion: 'policy.linkerd.io/v1beta3',
           kind: 'Server',
@@ -637,12 +688,12 @@ app.post('/api/admin/set-auth-policy', async (req, res) => {
             namespace: ns,
           },
           spec: {
-            podSelector: { matchLabels: { app: 'tetris-api' } },
+            podSelector: { matchLabels: { 'app.kubernetes.io/component': 'tetris-api' } },
             port: SERVICE_PORT,
           },
         };
 
-        // Create/update AuthorizationPolicy
+        // Create/update AuthorizationPolicy targeting the Server
         const authPolicy = {
           apiVersion: 'policy.linkerd.io/v1alpha1',
           kind: 'AuthorizationPolicy',
@@ -656,8 +707,8 @@ app.post('/api/admin/set-auth-policy', async (req, res) => {
               kind: 'Server',
               name: `tetris-api-server-${c}`,
             },
-            requiredAuthenticationRefs: allowedUsers.map(user => ({
-              name: user,
+            requiredAuthenticationRefs: allAllowed.map(sa => ({
+              name: sa,
               kind: 'ServiceAccount',
               group: '',
             })),
@@ -693,12 +744,29 @@ app.post('/api/admin/set-auth-policy', async (req, res) => {
         console.error('k8s auth policy deploy failed:', k8sErr.message);
       }
 
-      await pushLog(c, `Auth policy set: allow [${allowedUsers.join(', ')}]`);
+      await pushLog(c, `Auth policy set: allow [${allAllowed.join(', ')}]`);
     } else {
-      // Remove k8s resources
+      // Remove k8s resources and reset default inbound policy
       try {
         const creds = k8sCreds();
         const ns = creds.namespace;
+
+        // Remove default-inbound-policy annotation from tetris-api deployment
+        await k8sRequest('PATCH',
+          `/apis/apps/v1/namespaces/${ns}/deployments/${DEPLOYMENT_NAME}`,
+          {
+            spec: {
+              template: {
+                metadata: {
+                  annotations: {
+                    'config.linkerd.io/default-inbound-policy': null,
+                  },
+                },
+              },
+            },
+          }
+        );
+
         try {
           await k8sRequest('DELETE',
             `/apis/policy.linkerd.io/v1alpha1/namespaces/${ns}/authorizationpolicies/tetris-api-auth-${c}`

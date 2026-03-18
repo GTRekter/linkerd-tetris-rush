@@ -4,7 +4,7 @@ const PieceSidebar = ({ lastPieceMeta, feed }) => (
     <div className="tetris-sidebar-right">
         {lastPieceMeta && (
             <div className="panel-card mb-2 last-piece-card">
-                <div className="eyebrow mb-1">Last piece</div>
+                <div className="eyebrow mb-1">Next piece</div>
                 <div className="d-flex align-items-center gap-2 mb-1">
                     <span
                         className="piece-type-badge"

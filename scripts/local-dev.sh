@@ -88,7 +88,14 @@ ensure_redis() {
         exit 1
     fi
     if docker inspect "$REDIS_CONTAINER" &>/dev/null; then
-        if [ "$(docker inspect -f '{{.State.Running}}' "$REDIS_CONTAINER")" != "true" ]; then
+        # Verify the container has the host port mapping for 6379
+        local bound_port
+        bound_port="$(docker inspect -f '{{(index (index .NetworkSettings.Ports "6379/tcp") 0).HostPort}}' "$REDIS_CONTAINER" 2>/dev/null || true)"
+        if [ "$bound_port" != "6379" ]; then
+            echo "Recreating Redis container with correct port mapping..."
+            docker rm -f "$REDIS_CONTAINER" >/dev/null
+            docker run -d --name "$REDIS_CONTAINER" -p 6379:6379 redis:alpine >/dev/null
+        elif [ "$(docker inspect -f '{{.State.Running}}' "$REDIS_CONTAINER")" != "true" ]; then
             echo "Starting existing Redis container..."
             docker start "$REDIS_CONTAINER" >/dev/null
         else

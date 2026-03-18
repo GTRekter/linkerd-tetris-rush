@@ -3,9 +3,6 @@ import './ClusterCard.css';
 
 const CLIENT_IDENTITIES = [
     { id: 'tetris-frontend', label: 'tetris-frontend' },
-    { id: 'tetris-api', label: 'tetris-api' },
-    { id: 'dashboard-frontend', label: 'dashboard-frontend' },
-    { id: 'dashboard-api', label: 'dashboard-api' },
 ];
 
 const ClusterCard = ({ entry, onSetLatency, onToggleMtls, onSetAuthPolicy, onScaleDown, onScaleUp }) => {
@@ -36,9 +33,6 @@ const ClusterCard = ({ entry, onSetLatency, onToggleMtls, onSetAuthPolicy, onSca
                     {entry.offline && (
                         <span className="badge bg-danger" style={{ fontSize: '0.65rem' }}>OFFLINE</span>
                     )}
-                    <span style={{ fontSize: '0.85rem' }}>
-                        {entry.mtls_enabled ? '🔒' : '🔓'}
-                    </span>
                     {entry.auth_policy_enabled && (
                         <span style={{ fontSize: '0.85rem' }}>🛡️</span>
                     )}

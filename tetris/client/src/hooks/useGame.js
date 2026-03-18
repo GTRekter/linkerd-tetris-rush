@@ -26,8 +26,9 @@ export function useGame() {
     const [authPolicyEnabled, setAuthPolicyEnabled] = useState(false);
     const [egressEnabled, setEgressEnabled] = useState(false);
     const [statusMsg, setStatusMsg] = useState(null);
-    const [lastPieceMeta, setLastPieceMeta] = useState(null);
+    const [nextPieceMeta, setNextPieceMeta] = useState(null);
     const [feed, setFeed] = useState([]);
+    const nextPieceRef = useRef(null);       // queued { piece, data } for next turn
     const [leaderboard, setLeaderboard] = useState(null);
 
     const boardRef = useRef(createBoard());
@@ -78,13 +79,9 @@ export function useGame() {
     }, [joined, showStatus]);
 
     // ---------------------------------------------------------------------------
-    // Fetch next piece
+    // Fetch a single piece from the API (with retry loop for 403/503/504)
     // ---------------------------------------------------------------------------
-    const fetchNextPiece = useCallback(async (pid) => {
-        if (gameOverRef.current) return;
-        waitingRef.current = true;
-        setWaitingForPiece(true);
-
+    const fetchOnePiece = useCallback(async (pid) => {
         while (!gameOverRef.current) {
             try {
                 const res = await apiFetchNextPiece(pid);
@@ -111,7 +108,7 @@ export function useGame() {
                 if (data.corrupted) showStatus('danger', `Piece tampered! Expected ${data.corrupted_from}, got ${piece.type} — mTLS is OFF`, 4000);
                 if (data.egress) showStatus('success', 'Bonus I-piece via egress!', 2000);
 
-                setLastPieceMeta({
+                const meta = {
                     cluster: data.cluster,
                     clusterColor: data.cluster_color,
                     latency: data.latency_ms,
@@ -119,34 +116,60 @@ export function useGame() {
                     corrupted: data.corrupted,
                     piece: piece.type,
                     egress: data.egress,
-                });
+                };
                 addFeedItem({ cluster: data.cluster, clusterColor: data.cluster_color, piece: piece.type, latency: data.latency_ms, corrupted: data.corrupted, egress: data.egress, denied: false });
 
-                if (!canPlace(piece.matrix, piece.x, piece.y, boardRef.current)) {
-                    setGameOver(true);
-                    gameOverRef.current = true;
-                    waitingRef.current = false;
-                    setWaitingForPiece(false);
-                    return;
-                }
-
-                currentPieceRef.current = piece;
-                setCurrentPiece(piece);
-                lastDropRef.current = performance.now();
-                waitingRef.current = false;
-                setWaitingForPiece(false);
-                setRetryCount(0);
-                return;
-
+                return { piece, meta };
             } catch {
                 showStatus('danger', 'Connection lost — retrying...', 5000);
                 await new Promise(r => setTimeout(r, 2000));
             }
         }
+        return null;
+    }, [addFeedItem, showStatus]);
 
+    // ---------------------------------------------------------------------------
+    // Fetch next piece — uses a one-piece queue so sidebar shows the upcoming piece
+    // ---------------------------------------------------------------------------
+    const fetchNextPiece = useCallback(async (pid) => {
+        if (gameOverRef.current) return;
+        waitingRef.current = true;
+        setWaitingForPiece(true);
+
+        // Use the queued piece as current (if we have one)
+        let currentResult = nextPieceRef.current;
+        nextPieceRef.current = null;
+
+        // If no queued piece (first piece of the game), fetch one now
+        if (!currentResult) {
+            currentResult = await fetchOnePiece(pid);
+            if (!currentResult) { waitingRef.current = false; setWaitingForPiece(false); return; }
+        }
+
+        const { piece } = currentResult;
+
+        if (!canPlace(piece.matrix, piece.x, piece.y, boardRef.current)) {
+            setGameOver(true);
+            gameOverRef.current = true;
+            waitingRef.current = false;
+            setWaitingForPiece(false);
+            return;
+        }
+
+        currentPieceRef.current = piece;
+        setCurrentPiece(piece);
+        lastDropRef.current = performance.now();
         waitingRef.current = false;
         setWaitingForPiece(false);
-    }, [addFeedItem, showStatus]);
+        setRetryCount(0);
+
+        // Pre-fetch the next piece and show it in the sidebar
+        const nextResult = await fetchOnePiece(pid);
+        if (nextResult) {
+            nextPieceRef.current = nextResult;
+            setNextPieceMeta(nextResult.meta);
+        }
+    }, [fetchOnePiece]);
 
     // ---------------------------------------------------------------------------
     // Submit score
@@ -319,6 +342,8 @@ export function useGame() {
         setWaitingForPiece(false);
         setFeed([]);
         setRetryCount(0);
+        nextPieceRef.current = null;
+        setNextPieceMeta(null);
     }, []);
 
     const startNewGame = useCallback(() => {
@@ -336,7 +361,7 @@ export function useGame() {
         score, lines, level, gameOver,
         waitingForPiece, retryCount,
         scenario, mtlsEnabled, authPolicyEnabled, egressEnabled,
-        statusMsg, lastPieceMeta, feed, leaderboard,
+        statusMsg, nextPieceMeta, feed, leaderboard,
         onJoined, resetGame, startNewGame, toggleLeaderboard,
         tryMove, tryRotate, hardDrop, onTouchStart, onTouchEnd,
     };

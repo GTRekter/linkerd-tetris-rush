@@ -20,7 +20,6 @@ const ScoreSidebar = ({
         <div className="scenario-badge-pill mb-2">
             {scenario === 'mtls' && (
                 <span className={`mtls-pill ${mtlsEnabled ? 'secure' : 'insecure'}`}>
-                    {mtlsEnabled ? '🔒' : '🔓'}
                 </span>
             )}
             {scenario === 'auth-policy' && authPolicyEnabled && (
