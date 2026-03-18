@@ -1,0 +1,19 @@
+.dashboard-page {
+    overflow-x: hidden;
+}
+
+.gradient-title-db {
+    font-size: 1.3rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6, #06b6d4);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 4px;
+}

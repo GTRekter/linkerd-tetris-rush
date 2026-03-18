@@ -1,0 +1,12 @@
+apiVersion: v2
+name: tetris
+description: Tetris — Linkerd multicluster demo application
+type: application
+version: 0.1.0
+appVersion: "latest"
+keywords:
+  - linkerd
+  - multicluster
+  - demo
+  - tetris
+home: https://github.com/buoyantio/linkerd-multicluster-demo

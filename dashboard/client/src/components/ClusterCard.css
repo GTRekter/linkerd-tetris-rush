@@ -1,0 +1,62 @@
+
+.cluster-card-db {
+    transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.cluster-card-db.healthy {
+    border-color: rgba(34, 197, 94, 0.25);
+}
+
+.cluster-card-db.unhealthy {
+    border-color: rgba(239, 68, 68, 0.45);
+    box-shadow: 0 0 30px rgba(239, 68, 68, 0.1);
+    animation: danger-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes danger-pulse {
+    0%, 100% { box-shadow: 0 0 20px rgba(239, 68, 68, 0.1); }
+    50%       { box-shadow: 0 0 40px rgba(239, 68, 68, 0.25); }
+}
+
+.cluster-dot-db {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.card-section {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-top: 8px;
+    margin-top: 8px;
+}
+
+.user-select-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.user-chip {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.72rem;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.user-chip:hover {
+    border-color: rgba(99, 140, 255, 0.4);
+    color: #fff;
+    background: rgba(99, 140, 255, 0.1);
+}
+
+.user-chip.selected {
+    border-color: rgba(99, 140, 255, 0.6);
+    background: linear-gradient(120deg, rgba(124, 96, 255, 0.3), rgba(20, 181, 255, 0.25));
+    color: #fff;
+}

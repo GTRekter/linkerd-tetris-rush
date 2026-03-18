@@ -1,0 +1,20 @@
+.sidebar-log {
+    max-height: 340px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.event-log-list {
+    overflow-y: auto;
+    flex: 1;
+}
+
+.event-row {
+    animation: fade-in 0.2s ease-out;
+}
+
+@keyframes fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}

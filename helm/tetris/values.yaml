@@ -1,0 +1,106 @@
+## tetris Helm chart values
+## Customize per cluster by overriding these values with -f or --set flags.
+
+# Player-facing Express proxy — always on, serves game UI
+tetrisFrontend:
+  replicaCount: 2
+  image:
+    repository: tetris
+    tag: local
+    pullPolicy: IfNotPresent
+
+# FastAPI backend — scaled to 0 during failover demo
+tetrisApi:
+  replicaCount: 2
+  image:
+    repository: tetris-api
+    tag: local
+    pullPolicy: IfNotPresent
+
+# Enable/disable dashboard components (deploy on one cluster only)
+dashboard:
+  enabled: true
+
+# Presenter dashboard UI — always on
+dashboardFrontend:
+  replicaCount: 1
+  image:
+    repository: dashboard
+    tag: local
+    pullPolicy: IfNotPresent
+
+# Dashboard admin API — k8s scaling, admin commands
+dashboardApi:
+  replicaCount: 1
+  image:
+    repository: dashboard-api
+    tag: local
+    pullPolicy: IfNotPresent
+
+# Cluster identity — override per deployment
+cluster:
+  name: "us-east"
+  color: "#3b82f6"
+  region: "US East (N. Virginia)"
+
+# Shared Redis URL — all clusters write to the same instance.
+# Override per cluster at deploy time to point to the dashboard cluster's Redis.
+redis:
+  # Deploy a Redis instance on this cluster (enable on one cluster only)
+  deploy: true
+  url: ""
+
+# Public URL shown in the QR code sidebar (tetris-frontend LoadBalancer)
+externalUrl: "https://rush.your-domain.com"
+
+# Admin token — use a Kubernetes secret or override at install time
+adminToken: "demo-admin-2024"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# Linkerd sidecar injection
+linkerd:
+  injectNamespace: true
+  injectPods: true
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 80
+  # Multicluster mode — switchable at runtime from the dashboard.
+  # Controls the tetris-api Service label and HTTPRoute backends.
+  #
+  #   federated — mirror.linkerd.io/federated: member
+  #               HTTPRoute routes tetris-api → tetris-api-federated.
+  #               Linkerd aggregates endpoints from all clusters automatically.
+  #
+  #   mirrored  — mirror.linkerd.io/remote-discovery: member
+  #               HTTPRoute splits traffic equally across local tetris-api
+  #               and all mirrored backends. Pod-to-pod direct communication.
+  #
+  #   gateway   — mirror.linkerd.io/exported: "true"
+  #               HTTPRoute splits traffic equally across local tetris-api
+  #               and all mirrored backends. Traffic flows through gateways.
+  mode: federated
+
+ingress:
+  enabled: false
+  className: ""
+  host: ""
+  tls:
+    enabled: false
+    secretName: ""
+  annotations: {}
+
+# Mirrored service names from other clusters.
+# Used by mirrored and gateway modes for HTTPRoute backend generation.
+multicluster:
+  backends:
+    # - tetris-api-eu-west
+    # - tetris-api-ap-south

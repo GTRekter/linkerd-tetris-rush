@@ -1,0 +1,82 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+.venv/
+venv/
+ENV/
+env/
+
+# Production
+/build
+/dist
+.next/
+out/
+
+# Environment
+.env
+.env.local
+.env.*.local
+.env.production.local
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# Testing
+coverage/
+.nyc_output/
+.pytest_cache/
+*.cover
+.hypothesis/
+
+# Misc
+*.log
+logs/
+*.pid
+*.seed
+.cache
+.serverless/
+.fusebox/
+.dynamodb/
+.tern-port
+
+# OS
+Thumbs.db
+.AppleDouble
+.LSOverride
+.Spotlight-V100
+.Trashes
+._*
+
+# Certificates (if sensitive)
+certificates/
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Local development
+.local/
+.tmp/
+
+# Nginx/Web
+.nginx/

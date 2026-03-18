@@ -1,0 +1,5 @@
+.traffic-canvas-wrapper {
+    min-height: 300px;
+    position: relative;
+    overflow: hidden;
+}

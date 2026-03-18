@@ -1,0 +1,211 @@
+.full-height-container {
+    min-height: calc(100vh - 190px); /* Account for nav + footer height */
+}
+
+.eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    font-size: 0.75rem;
+    color: #9cb3ff;
+}
+
+.panel-card {
+    background-color: rgba(12, 15, 24, 0.88);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 1.5rem;
+    box-shadow: 0 20px 60px rgba(3, 6, 12, 0.65);
+}
+
+/* ── Form labels ──────────────────────────────────────────────────────────── */
+
+.form-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: rgba(255, 255, 255, 0.5);
+    margin-bottom: 0.4rem;
+}
+
+/* ── Text / password inputs ───────────────────────────────────────────────── */
+
+.form-control {
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 0.5rem;
+    color: #f8f9fa;
+}
+
+.form-control:focus {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(155, 180, 255, 0.5);
+    color: #f8f9fa;
+    box-shadow: 0 0 0 0.2rem rgba(99, 140, 255, 0.2);
+}
+
+.form-control::placeholder {
+    color: rgba(248, 249, 250, 0.65);
+}
+
+/* ── Select dropdowns ─────────────────────────────────────────────────────── */
+
+.form-select {
+    background-color: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 0.5rem;
+    color: #f8f9fa;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23adb5bd' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e");
+}
+
+.form-select:focus {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-color: rgba(155, 180, 255, 0.5);
+    color: #f8f9fa;
+    box-shadow: 0 0 0 0.2rem rgba(99, 140, 255, 0.2);
+}
+
+.form-select option {
+    background: #1a1d26;
+    color: #f8f9fa;
+}
+
+/* ── Checkboxes ───────────────────────────────────────────────────────────── */
+
+input[type="checkbox"] {
+    width: 1rem;
+    height: 1rem;
+    accent-color: #638cff;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+
+/* ── Stacked input group (input + button side by side) ───────────────────── */
+
+.stacked-input .form-control {
+    border-right: none;
+    border-radius: 0.55rem 0 0 0.55rem;
+}
+
+.stacked-input .btn {
+    border-radius: 0 0.55rem 0.55rem 0;
+}
+
+/* ── Secondary outline button — dark theme override ──────────────────────── */
+
+.btn-outline-secondary {
+    border-color: rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.07);
+}
+
+.btn-outline-secondary:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #f8f9fa;
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
+/* ── Tiny button variant ─────────────────────────────────────────────────── */
+
+.btn-xs {
+    padding: 0.2rem 0.6rem;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    border-radius: 0.35rem;
+}
+
+/* ── Status chips ─────────────────────────────────────────────────────────── */
+
+.status-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.85rem;
+    padding: 0.35rem 0.85rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background: rgba(255, 255, 255, 0.05);
+    color: #e7ebff;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.status-chip.configured,
+.status-chip.chip-success {
+    background: rgba(76, 175, 80, 0.12);
+    border-color: rgba(76, 175, 80, 0.35);
+    color: #a4f5b0;
+}
+
+.status-chip.not-found {
+    background: rgba(255, 193, 7, 0.12);
+    border-color: rgba(255, 193, 7, 0.35);
+    color: #ffdf8a;
+}
+
+.status-chip.error,
+.status-chip.chip-error {
+    background: rgba(220, 53, 69, 0.15);
+    border-color: rgba(220, 53, 69, 0.3);
+    color: #ff9eaa;
+}
+
+.status-chip.chip-running {
+    background: rgba(99, 140, 255, 0.15);
+    border-color: rgba(99, 140, 255, 0.4);
+    color: #9db8ff;
+    animation: pulse-running 2s ease-in-out infinite;
+}
+
+.status-chip.chip-pending {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.5);
+}
+
+@keyframes pulse-running {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.65; }
+}
+
+/* ── Feedback banners ─────────────────────────────────────────────────────── */
+
+.feedback {
+    font-size: 0.875rem;
+    padding: 0.5rem 0.85rem;
+    border-radius: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+.feedback.success {
+    background: rgba(40, 167, 69, 0.15);
+    border: 1px solid rgba(40, 167, 69, 0.3);
+    color: #6ddb8c;
+}
+
+.feedback.error {
+    background: rgba(220, 53, 69, 0.15);
+    border: 1px solid rgba(220, 53, 69, 0.3);
+    color: #f08090;
+}
+
+.feedback.warning {
+    background: rgba(255, 193, 7, 0.12);
+    border: 1px solid rgba(255, 193, 7, 0.3);
+    color: #ffdf8a;
+}
+
+.feedback.info {
+    background: rgba(99, 140, 255, 0.12);
+    border: 1px solid rgba(99, 140, 255, 0.3);
+    color: #9db8ff;
+}
+
+/* ── Inline code snippets ─────────────────────────────────────────────────── */
+
+code {
+    font-size: 0.82rem;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 0.25rem;
+    padding: 0.1em 0.35em;
+    color: rgba(255, 255, 255, 0.9);
+}

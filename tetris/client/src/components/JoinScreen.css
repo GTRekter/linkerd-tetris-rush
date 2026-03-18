@@ -1,0 +1,28 @@
+
+.player-join-card {
+    padding: 2.5rem 2rem;
+}
+
+.player-join-card .icon {
+    width: 120px;
+    height: auto;
+    margin-bottom: 1rem;
+}
+
+.join-logo {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    animation: pulse-logo 2s ease-in-out infinite;
+}
+
+@keyframes pulse-logo {
+    0%, 100% { transform: scale(1); }
+    50%       { transform: scale(1.1); }
+}
+
+.gradient-title {
+    font-weight: 800;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6, #06b6d4);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
