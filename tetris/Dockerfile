@@ -1,8 +1,8 @@
 # Build context: repo root
 FROM node:20 AS builder
 WORKDIR /app
-COPY tetris/client/package.json tetris/client/yarn.lock ./
-RUN yarn install --frozen-lockfile
+COPY tetris/client/package.json ./
+RUN yarn install
 COPY tetris/client/ .
 RUN yarn build
 
