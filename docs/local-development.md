@@ -9,7 +9,7 @@ This guide covers running Tetris Rush locally without Kubernetes for frontend an
 | Tool | Version | Purpose |
 |------|---------|---------|
 | Python | 3.12+ | tetris-api backend |
-| Node.js | 20+ | Frontend dev servers and dashboard-api |
+| Node.js | 20+ | Frontend dev servers and agent |
 | Yarn | 1.x | Frontend dependency management |
 | Docker | Any | Redis container |
 
@@ -130,12 +130,12 @@ yarn start
 
 Both React apps start on port 3000 with hot reload.
 
-### 4. Start dashboard-api (optional)
+### 4. Start agent (optional)
 
 Only needed if you're working on the dashboard and need cluster info, scaling, or admin endpoints:
 
 ```bash
-cd api/dashboard-api
+cd api/agent
 npm install
 node index.js
 ```
@@ -218,7 +218,7 @@ dashboard/client/src/
 ├── pages/
 │   └── DashboardPage.js  # Main presenter dashboard
 └── services/
-    └── dashboardApi.js   # API client for dashboard-api
+    └── agent.js   # API client for agent
 ```
 
 ---

@@ -49,7 +49,6 @@ export function lockPiece(piece, board) {
                     clusterColor: piece.clusterColor || '#555',
                     cluster: piece.cluster || '',
                     corrupted: piece.corrupted,
-                    egress: piece.egress,
                 };
             }
         }
@@ -82,7 +81,6 @@ export function buildPiece(apiData) {
         clusterColor: apiData.cluster_color || '#555',
         cluster: apiData.cluster,
         corrupted: apiData.corrupted,
-        egress: apiData.egress,
     };
 }
 

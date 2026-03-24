@@ -3,7 +3,7 @@ import {
     fetchClusters, fetchClusterInfo, fetchClusterLogs, fetchClusterPieces,
     fetchClusterUsers, fetchClusterLatency, fetchLeaderboard,
     adminPost,
-} from '../services/dashboardApi.js';
+} from '../services/agentApi.js';
 import GlobalStats from '../components/GlobalStats';
 import ModeSelector from '../components/ScenarioTabs';
 import ClusterCard from '../components/ClusterCard';
@@ -104,7 +104,7 @@ const DashboardPage = () => {
                 for (const [name, data] of Object.entries(prev)) {
                     const wasOnline = !data.offline;
                     if (wasOnline) {
-                        addLog('system', '#ef4444', 'Lost connection to dashboard API');
+                        addLog('system', '#ef4444', 'Lost connection to agent');
                     }
                     next[name] = { ...data, offline: true, info: { ...data.info, healthy: false } };
                 }

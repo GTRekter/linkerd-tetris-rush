@@ -3,7 +3,7 @@ Tetris Rush — FastAPI backend
 ==============================
 Conference demo for Linkerd multicluster.
 Each /api/next-piece request is a real mesh call routed through Linkerd.
-Game state is stored in Redis so dashboard-api can read it independently.
+Game state is stored in Redis so the agent can read it independently.
 """
 
 from __future__ import annotations

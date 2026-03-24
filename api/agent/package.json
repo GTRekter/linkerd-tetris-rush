@@ -1,8 +1,8 @@
 {
-  "name": "dashboard-api",
+  "name": "agent",
   "version": "1.0.0",
   "private": true,
-  "description": "Admin API for the Tetris dashboard — k8s scaling + shared Redis state.",
+  "description": "Admin API agent — k8s scaling + shared Redis state.",
   "main": "index.js",
   "license": "MIT",
   "dependencies": {

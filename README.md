@@ -8,7 +8,7 @@ A live demo platform for showcasing Linkerd's multi-cluster service mesh capabil
 |-----------|----------|-----------|---------|
 | `tetris-api` | Python | FastAPI | Game backend: piece generation, scoring, leaderboard, Redis state |
 | `tetris-frontend` | JavaScript | Express + React | Player UI: 10x20 game board, controls, piece preview |
-| `dashboard-api` | JavaScript | Express | Admin API: Kubernetes scaling, cluster discovery, scenario toggles |
+| `agent` | JavaScript | Express | Admin API: Kubernetes scaling, cluster discovery, scenario toggles |
 | `dashboard-frontend` | JavaScript | Express + React | Presenter UI: traffic visualization, cluster cards, leaderboard |
 | Redis | - | - | Shared cross-cluster state: players, game stats, event logs |
 
@@ -20,7 +20,7 @@ All components are containerized with multi-stage Docker builds and deployed via
 linkerd-tetris-rush/
 ├── api/
 │   ├── tetris-api/          # FastAPI backend (Python 3.12)
-│   └── dashboard-api/       # Express admin API (Node.js)
+│   └── agent/       # Express admin API (Node.js)
 ├── tetris/
 │   ├── server/              # Express proxy server
 │   └── client/src/          # React game frontend
@@ -159,7 +159,7 @@ Refer to the detailed guides in `docs/`:
 
 ### Federated Mode
 
-In federated mode, each cluster exposes a `tetris-api-federated` ClusterIP service that aggregates traffic across local `tetris-api` instances. The `dashboard-api` services in `ap-south` and `ap-central` connect to Redis in `ap-east` via a cross-cluster LoadBalancer. The dashboard frontend in `ap-east` reaches remote `dashboard-api` instances through mirrored services.
+In federated mode, each cluster exposes a `tetris-api-federated` ClusterIP service that aggregates traffic across local `tetris-api` instances. The `agent` services in `ap-south` and `ap-central` connect to Redis in `ap-east` via a cross-cluster LoadBalancer. The dashboard frontend in `ap-east` reaches remote `agent` instances through mirrored services.
 
 
 ```
@@ -174,21 +174,21 @@ In federated mode, each cluster exposes a `tetris-api-federated` ClusterIP servi
 │  └─────────────────────────┘                                                    │
 │                                                                                 │
 │  ┌─────────────────────────┐        ┌─────────────────────────┐                 │
-│  │  tetris-api             │        │  dashboard-api          │                 │
+│  │  tetris-api             │        │  agent          │                 │
 │  │  ┌───────────────────┐  │        │  ┌───────────────────┐  │                 │
 │  │  │  linkerd-proxy    │  │        │  │  linkerd-proxy    │  │                 │
 │  │  └───────────────────┘  │        │  └───────────────────┘  │                 │
 │  └────────────┬────────────┘        └────────────┬────────────┘                 │
 │               │                                  │                              │
 │  ┌────────────▼────────────┐        ┌────────────▼────────────┐                 │
-│  │  tetris-api (ClusterIP) │        │  dashboard-api          │                 │
+│  │  tetris-api (ClusterIP) │        │  agent          │                 │
 │  └────────────┬────────────┘        │  (ClusterIP)            │◄── cross-cluster│
 │  ┌────────────▼────────────┐        └─────────────────────────┘     from east   │
 │  │  tetris-api-federated   │                     │                              │
 │  │  (ClusterIP)            │                     ▼                              │
 │  └─────────────────────────┘          Redis (LoadBalancer) ──► ap-east          │
 │                                                                                 │
-│               Kubernetes API ◄── dashboard-api                                  │
+│               Kubernetes API ◄── agent                                  │
 └─────────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -202,21 +202,21 @@ In federated mode, each cluster exposes a `tetris-api-federated` ClusterIP servi
 │  └─────────────────────────┘                                                    │
 │                                                                                 │
 │  ┌─────────────────────────┐        ┌─────────────────────────┐                 │
-│  │  tetris-api             │        │  dashboard-api          │                 │
+│  │  tetris-api             │        │  agent          │                 │
 │  │  ┌───────────────────┐  │        │  ┌───────────────────┐  │                 │
 │  │  │  linkerd-proxy    │  │        │  │  linkerd-proxy    │  │                 │
 │  │  └───────────────────┘  │        │  └───────────────────┘  │                 │
 │  └────────────┬────────────┘        └────────────┬────────────┘                 │
 │               │                                  │                              │
 │  ┌────────────▼────────────┐        ┌────────────▼────────────┐                 │
-│  │  tetris-api (ClusterIP) │        │  dashboard-api          │                 │
+│  │  tetris-api (ClusterIP) │        │  agent          │                 │
 │  └────────────┬────────────┘        │  (ClusterIP)            │◄── cross-cluster│
 │  ┌────────────▼────────────┐        └─────────────────────────┘     from east   │
 │  │  tetris-api-federated   │                     │                              │
 │  │  (ClusterIP)            │                     ▼                              │
 │  └─────────────────────────┘          Redis (LoadBalancer) ──► ap-east          │
 │                                                                                 │
-│               Kubernetes API ◄── dashboard-api                                  │
+│               Kubernetes API ◄── agent                                  │
 └─────────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -232,29 +232,29 @@ In federated mode, each cluster exposes a `tetris-api-federated` ClusterIP servi
 │           │                         ┌────────────┼─────────────────────┘        │
 │   Tetris (LoadBalancer)             │            │                              │
 │                          ┌──────────▼─────────────────────────────┐             │
-│                          │  dashboard-api-vastaya-ap-central      │             │
+│                          │  agent-vastaya-ap-central      │             │
 │                          │  (ClusterIP)                           │             │
 │                          ├────────────────────────────────────────┤             │
-│                          │  dashboard-api-vastaya-ap-south        │             │
+│                          │  agent-vastaya-ap-south        │             │
 │                          │  (ClusterIP)                           │             │
 │                          └────────────────────────────────────────┘             │
 │                                                                                 │
 │  ┌─────────────────────────┐        ┌─────────────────────────┐                 │
-│  │  tetris-api             │        │  dashboard-api          │                 │
+│  │  tetris-api             │        │  agent          │                 │
 │  │  ┌───────────────────┐  │        │  ┌───────────────────┐  │                 │
 │  │  │  linkerd-proxy    │  │        │  │  linkerd-proxy    │  │                 │
 │  │  └───────────────────┘  │        │  └───────────────────┘  │                 │
 │  └────────────┬────────────┘        └────────────┬────────────┘                 │
 │               │                                  │                              │
 │  ┌────────────▼────────────┐        ┌────────────▼────────────┐                 │
-│  │  tetris-api (ClusterIP) │        │  dashboard-api          │                 │
+│  │  tetris-api (ClusterIP) │        │  agent          │                 │
 │  └────────────┬────────────┘        │  (ClusterIP)            │                 │
 │  ┌────────────▼────────────┐        └─────────────────────────┘                 │
 │  │  tetris-api-federated   │                                                    │
 │  │  (ClusterIP)            │       Redis (LoadBalancer) ◄── ap-south, ap-central│
 │  └─────────────────────────┘                                                    │
 │                                                                                 │
-│               Kubernetes API ◄── dashboard-api                                  │
+│               Kubernetes API ◄── agent                                  │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -280,20 +280,20 @@ In mirrored/gateway mode, remote cluster services are mirrored locally as `tetri
 │                        └──► tetris-api-vastaya-ap-east (ClusterIP)              │
 │                                                                                 │
 │  ┌─────────────────────────┐        ┌─────────────────────────┐                 │
-│  │  tetris-api             │        │  dashboard-api          │                 │
+│  │  tetris-api             │        │  agent          │                 │
 │  │  ┌───────────────────┐  │        │  ┌───────────────────┐  │                 │
 │  │  │  linkerd-proxy    │  │        │  │  linkerd-proxy    │  │                 │
 │  │  └───────────────────┘  │        │  └───────────────────┘  │                 │
 │  └─────────────────────────┘        └────────────┬────────────┘                 │
 │                                     ┌────────────▼────────────┐                 │
-│                                     │  dashboard-api          │                 │
+│                                     │  agent          │                 │
 │                                     │  (ClusterIP)            │◄── cross-cluster│
 │                                     └─────────────────────────┘     from east   │
 │                                                  │                              │
 │                                                  ▼                              │
 │                                       Redis (LoadBalancer) ──► ap-east          │
 │                                                                                 │
-│               Kubernetes API ◄── dashboard-api                                  │
+│               Kubernetes API ◄── agent                                  │
 └─────────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -313,20 +313,20 @@ In mirrored/gateway mode, remote cluster services are mirrored locally as `tetri
 │                        └──► tetris-api-vastaya-ap-east (ClusterIP)              │
 │                                                                                 │
 │  ┌─────────────────────────┐        ┌─────────────────────────┐                 │
-│  │  tetris-api             │        │  dashboard-api          │                 │
+│  │  tetris-api             │        │  agent          │                 │
 │  │  ┌───────────────────┐  │        │  ┌───────────────────┐  │                 │
 │  │  │  linkerd-proxy    │  │        │  │  linkerd-proxy    │  │                 │
 │  │  └───────────────────┘  │        │  └───────────────────┘  │                 │
 │  └─────────────────────────┘        └────────────┬────────────┘                 │
 │                                     ┌────────────▼────────────┐                 │
-│                                     │  dashboard-api          │                 │
+│                                     │  agent          │                 │
 │                                     │  (ClusterIP)            │◄── cross-cluster│
 │                                     └─────────────────────────┘     from east   │
 │                                                  │                              │
 │                                                  ▼                              │
 │                                       Redis (LoadBalancer) ──► ap-east          │
 │                                                                                 │
-│               Kubernetes API ◄── dashboard-api                                  │
+│               Kubernetes API ◄── agent                                  │
 └─────────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -342,10 +342,10 @@ In mirrored/gateway mode, remote cluster services are mirrored locally as `tetri
 │           │                         ┌────────────┼─────────────────────┘        │
 │   Tetris (LoadBalancer)             │            │                              │
 │                          ┌──────────▼─────────────────────────────┐             │
-│                          │  dashboard-api-vastaya-ap-central      │             │
+│                          │  agent-vastaya-ap-central      │             │
 │                          │  (ClusterIP)                           │             │
 │                          ├────────────────────────────────────────┤             │
-│                          │  dashboard-api-vastaya-ap-south        │             │
+│                          │  agent-vastaya-ap-south        │             │
 │                          │  (ClusterIP)                           │             │
 │                          └────────────────────────────────────────┘             │
 │                                                                                 │
@@ -356,18 +356,18 @@ In mirrored/gateway mode, remote cluster services are mirrored locally as `tetri
 │                        └──► tetris-api-vastaya-ap-south (ClusterIP)             │
 │                                                                                 │
 │  ┌─────────────────────────┐        ┌─────────────────────────┐                 │
-│  │  tetris-api             │        │  dashboard-api          │                 │
+│  │  tetris-api             │        │  agent          │                 │
 │  │  ┌───────────────────┐  │        │  ┌───────────────────┐  │                 │
 │  │  │  linkerd-proxy    │  │        │  │  linkerd-proxy    │  │                 │
 │  │  └───────────────────┘  │        │  └───────────────────┘  │                 │
 │  └─────────────────────────┘        └────────────┬────────────┘                 │
 │                                     ┌────────────▼────────────┐                 │
-│                                     │  dashboard-api          │                 │
+│                                     │  agent          │                 │
 │                                     │  (ClusterIP)            │                 │
 │                                     └─────────────────────────┘                 │
 │                                                                                 │
 │                                    Redis (LoadBalancer) ◄── ap-south, ap-central│
 │                                                                                 │
-│               Kubernetes API ◄── dashboard-api                                  │
+│               Kubernetes API ◄── agent                                  │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```

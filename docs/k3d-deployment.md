@@ -92,7 +92,7 @@ Four container images are built from the repo:
 | Image | Dockerfile | Clusters |
 |-------|-----------|----------|
 | `dashboard:local` | `dashboard/Dockerfile` | ap-east only |
-| `dashboard-api:local` | `api/dashboard-api/Dockerfile` | All |
+| `agent:local` | `api/agent/Dockerfile` | All |
 | `tetris:local` | `tetris/Dockerfile` | All |
 | `tetris-api:local` | `api/tetris-api/Dockerfile` | All |
 

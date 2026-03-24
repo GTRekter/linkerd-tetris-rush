@@ -13,7 +13,7 @@ Tetris Rush is a four-component system deployed across multiple Kubernetes clust
 │                        Dashboard Cluster                            │
 │                                                                     │
 │  ┌────────────────────┐     ┌──────────────────┐                    │
-│  │ dashboard-frontend │────▶│  dashboard-api   │                    │
+│  │ dashboard-frontend │────▶│  agent   │                    │
 │  │ (React + Express)  │     │  (Node/Express)  │                    │
 │  └────────────────────┘     └────────┬─────────┘                    │
 │         ▲ presenter                  │                              │
@@ -34,7 +34,7 @@ Tetris Rush is a four-component system deployed across multiple Kubernetes clust
 │        ▲ player phone            │  │                                │
 │        │ via QR                  │  │                                │
 │ ┌─────────────┐                  │  │ ┌─────────────┐                │
-│ │dashboard-api│ (for k8s scale)  │  │ │dashboard-api│                │
+│ │agent│ (for k8s scale)  │  │ │agent│                │
 │ └─────────────┘                  │  │ └─────────────┘                │
 └──────────────────────────────────┘  └────────────────────────────────┘
 ```
@@ -74,7 +74,7 @@ The proxy target `tetris-api-federated` is a Linkerd federated service that aggr
 
 **Source:** `tetris/server/index.js` (server), `tetris/client/src/` (React app)
 
-### 3. dashboard-api (Node / Express)
+### 3. agent (Node / Express)
 
 The admin and aggregation backend. Deployed on every cluster for Kubernetes scaling operations; the dashboard cluster instance also serves cluster info, leaderboard, and the QR redirect.
 
@@ -86,10 +86,10 @@ The admin and aggregation backend. Deployed on every cluster for Kubernetes scal
 | Player redirect | `GET /go` — round-robin redirect distributing QR scanners across cluster frontends |
 | Admin controls | `POST /api/admin/*` — writes scenario toggles to Redis for any cluster |
 | Kubernetes scaling | `POST /admin/scale-down`, `/admin/scale-up` — patches Deployment replicas via the k8s API |
-| Remote scaling | Proxies scale requests to other clusters via Linkerd-mirrored `dashboard-api-{cluster}` services |
+| Remote scaling | Proxies scale requests to other clusters via Linkerd-mirrored `agent-{cluster}` services |
 | Event log | Maintains a per-cluster capped event log in Redis |
 
-**Source:** `api/dashboard-api/index.js`
+**Source:** `api/agent/index.js`
 
 ### 4. dashboard-frontend (Node / Express + React)
 
@@ -98,9 +98,9 @@ The presenter-facing UI. Shows real-time traffic visualization, cluster cards, l
 | Responsibility | Details |
 |---|---|
 | Static serving | Serves the React dashboard build |
-| Proxy: `/go` | Proxied to dashboard-api (round-robin player redirect) |
-| Proxy: `/admin/*` | Proxied to dashboard-api (Kubernetes scaling) |
-| Proxy: `/api/*` | Proxied to dashboard-api (cluster info, admin commands) |
+| Proxy: `/go` | Proxied to agent (round-robin player redirect) |
+| Proxy: `/admin/*` | Proxied to agent (Kubernetes scaling) |
+| Proxy: `/api/*` | Proxied to agent (cluster info, admin commands) |
 | SPA fallback | All other routes serve `index.html` |
 
 **Source:** `dashboard/server/index.js` (server), `dashboard/client/src/` (React app)
@@ -118,7 +118,7 @@ Player scans QR code
   GET /go  (dashboard-frontend)
         │
         ▼
-  dashboard-api round-robin redirect
+  agent round-robin redirect
         │  (Redis atomic counter → pick cluster)
         ▼
   302 → {cluster_external_url}/play
@@ -178,7 +178,7 @@ When multiple users scan the same QR code, they are distributed across different
 QR code → GET {DASHBOARD_URL}/go
                │
                ▼
-         dashboard-api
+         agent
                │
      ┌─────────┴───────────┐
      │  Redis INCR         │
@@ -209,10 +209,10 @@ Presenter clicks control on dashboard
         ▼
   dashboard-frontend
         │
-  POST /api/admin/{action}  (proxied to dashboard-api)
+  POST /api/admin/{action}  (proxied to agent)
         │
         ▼
-  dashboard-api writes to Redis
+  agent writes to Redis
   (targets specific cluster by key prefix)
         │
         ▼
@@ -228,15 +228,15 @@ Presenter clicks "Kill" on cluster card
         ▼
   POST /admin/scale-down  { cluster: "eu-west" }
         │
-  dashboard-api on dashboard cluster
+  agent on dashboard cluster
         │
    Is target == self?
    ├─ Yes → PATCH k8s Deployment replicas=0
-   └─ No  → Proxy to dashboard-api-{cluster}
+   └─ No  → Proxy to agent-{cluster}
             via Linkerd service mirroring
             │
             ▼
-            Remote dashboard-api patches its own Deployment
+            Remote agent patches its own Deployment
         │
         ▼
   Set Redis {cluster}:game:state:healthy = "0"
@@ -302,7 +302,7 @@ Per-piece-type counters. Keys are piece type letters, values are counts.
 
 #### `{cluster}:game:cluster` (Hash)
 
-Cluster identity, written by tetris-api on startup. Used by dashboard-api for cluster discovery and info display.
+Cluster identity, written by tetris-api on startup. Used by agent for cluster discovery and info display.
 
 | Field | Type | Description |
 |---|---|---|
@@ -324,7 +324,7 @@ Capped event log (max 200 entries). Each entry is a JSON string.
 }
 ```
 
-Managed by dashboard-api's `pushLog()` function. Entries are prepended (LPUSH) and the list is trimmed (LTRIM 0 199).
+Managed by agent's `pushLog()` function. Entries are prepended (LPUSH) and the list is trimmed (LTRIM 0 199).
 
 ### Global Keys
 
@@ -354,7 +354,7 @@ Atomic counter used by the `/go` endpoint for round-robin distribution of QR cod
 
 ### Cluster Discovery
 
-Dashboard-api discovers clusters dynamically by scanning Redis keys:
+The agent discovers clusters dynamically by scanning Redis keys:
 
 ```javascript
 const keys = await redis.keys('*:game:cluster');
@@ -374,8 +374,8 @@ This means clusters self-register by writing their identity to `{cluster}:game:c
 |---|---|---|---|---|
 | `tetris-frontend` | `tetris` | All | Yes | Serves React game + proxies to tetris-api |
 | `tetris-api` | `tetris-api` | All | Yes (0 for failover demo) | FastAPI game backend |
-| `dashboard-frontend` | `dashboard` | Dashboard only | Yes | Serves React dashboard + proxies to dashboard-api |
-| `dashboard-api` | `dashboard-api` | All | No (always 1) | Admin API, k8s scaling, cluster info aggregation |
+| `dashboard-frontend` | `dashboard` | Dashboard only | Yes | Serves React dashboard + proxies to agent |
+| `agent` | `agent` | All | No (always 1) | Admin API, k8s scaling, cluster info aggregation |
 
 ### Services
 
@@ -384,7 +384,7 @@ This means clusters self-register by writing their identity to `{cluster}:game:c
 | `tetris-frontend` | LoadBalancer | — | Player entry point |
 | `tetris-api` | ClusterIP | `mirror.linkerd.io/federated: member` | Federated across clusters via Linkerd |
 | `dashboard-frontend` | LoadBalancer (port 8090) | — | Presenter entry point |
-| `dashboard-api` | ClusterIP | `mirror.linkerd.io/exported: "true"` | Mirrored for cross-cluster scaling proxy |
+| `agent` | ClusterIP | `mirror.linkerd.io/exported: "true"` | Mirrored for cross-cluster scaling proxy |
 | `redis` | ClusterIP | `mirror.linkerd.io/exported: "true"` | Shared state store |
 
 ### Linkerd Multicluster Labels
@@ -397,7 +397,7 @@ This means clusters self-register by writing their identity to `{cluster}:game:c
 ### How Federated vs. Exported Services Differ
 
 - **Federated (`tetris-api`):** All cluster endpoints are merged into one virtual service (`tetris-api-federated`). Linkerd load-balances across all clusters transparently. The client resolves a single DNS name.
-- **Exported (`dashboard-api`, `redis`):** Each cluster's service appears as a distinct mirrored service in the target cluster (e.g., `dashboard-api-vastaya-ap-central`). The client must explicitly choose which cluster to call.
+- **Exported (`agent`, `redis`):** Each cluster's service appears as a distinct mirrored service in the target cluster (e.g., `agent-vastaya-ap-central`). The client must explicitly choose which cluster to call.
 
 ---
 
@@ -414,7 +414,7 @@ This means clusters self-register by writing their identity to `{cluster}:game:c
 | `ADMIN_TOKEN` | Token required for all `/api/admin/*` calls | `demo-admin-2024` |
 | `REDIS_URL` | Redis connection URL | `redis://localhost:6379` |
 
-### dashboard-api
+### agent
 
 | Variable | Description | Default |
 |---|---|---|
@@ -436,7 +436,7 @@ This means clusters self-register by writing their identity to `{cluster}:game:c
 
 | Variable | Description | Default |
 |---|---|---|
-| `DASHBOARD_API_TARGET` | URL of the dashboard-api | `http://127.0.0.1:8001` |
+| `AGENT_TARGET` | URL of the agent | `http://127.0.0.1:8001` |
 
 ---
 

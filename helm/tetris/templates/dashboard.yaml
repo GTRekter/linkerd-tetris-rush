@@ -40,8 +40,8 @@ spec:
           ports:
             - containerPort: 80
           env:
-            - name: DASHBOARD_API_TARGET
-              value: "http://dashboard-api.{{ .Release.Namespace }}.svc.cluster.local"
+            - name: AGENT_TARGET
+              value: "http://agent.{{ .Release.Namespace }}.svc.cluster.local"
           resources:
             requests:
               cpu: 50m

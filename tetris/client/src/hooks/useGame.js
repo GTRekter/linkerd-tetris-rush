@@ -24,7 +24,6 @@ export function useGame() {
     const [scenario, setScenario] = useState('httproute');
     const [mtlsEnabled, setMtlsEnabled] = useState(true);
     const [authPolicyEnabled, setAuthPolicyEnabled] = useState(false);
-    const [egressEnabled, setEgressEnabled] = useState(false);
     const [statusMsg, setStatusMsg] = useState(null);
     const [nextPieceMeta, setNextPieceMeta] = useState(null);
     const [feed, setFeed] = useState([]);
@@ -70,7 +69,6 @@ export function useGame() {
                 });
                 setMtlsEnabled(data.mtls_enabled !== false);
                 setAuthPolicyEnabled(data.auth_policy_enabled || false);
-                setEgressEnabled(data.egress_enabled || false);
             } catch { /* cluster may be down */ }
         };
         poll();
@@ -118,7 +116,6 @@ export function useGame() {
                 const piece = buildPiece(data);
 
                 if (data.corrupted) showStatus('danger', `mTLS OFF — piece intercepted! ${data.corrupted_from} → ${piece.type}`, 4000);
-                if (data.egress) showStatus('success', 'Bonus I-piece via egress!', 2000);
 
                 const meta = {
                     cluster: data.cluster,
@@ -127,9 +124,8 @@ export function useGame() {
                     mtls: data.mtls,
                     corrupted: data.corrupted,
                     piece: piece.type,
-                    egress: data.egress,
                 };
-                addFeedItem({ cluster: data.cluster, clusterColor: data.cluster_color, piece: piece.type, latency: data.latency_ms, corrupted: data.corrupted, egress: data.egress, denied: false });
+                addFeedItem({ cluster: data.cluster, clusterColor: data.cluster_color, piece: piece.type, latency: data.latency_ms, corrupted: data.corrupted, denied: false });
 
                 return { piece, meta };
             } catch {
@@ -373,9 +369,9 @@ export function useGame() {
         joined, board, currentPiece, boardRef,
         score, lines, level, gameOver,
         waitingForPiece, retryCount,
-        scenario, mtlsEnabled, authPolicyEnabled, egressEnabled,
+        scenario, mtlsEnabled, authPolicyEnabled,
         statusMsg, nextPieceMeta, feed, leaderboard,
-        onJoined, resetGame, startNewGame, toggleLeaderboard,
-        tryMove, tryRotate, hardDrop, onTouchStart, onTouchEnd,
+        onJoined, startNewGame, toggleLeaderboard,
+        onTouchStart, onTouchEnd,
     };
 }

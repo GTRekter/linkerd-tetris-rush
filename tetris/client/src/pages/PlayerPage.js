@@ -69,7 +69,6 @@ const PlayerPage = () => {
                             scenario={game.scenario}
                             mtlsEnabled={game.mtlsEnabled}
                             authPolicyEnabled={game.authPolicyEnabled}
-                            egressEnabled={game.egressEnabled}
                             leaderboard={game.leaderboard}
                             onToggleLeaderboard={game.toggleLeaderboard}
                         />

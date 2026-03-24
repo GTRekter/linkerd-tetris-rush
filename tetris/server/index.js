@@ -7,13 +7,13 @@ const app = express();
 const PORT = process.env.PORT || 80;
 const API_TARGET = process.env.API_TARGET || 'http://127.0.0.1:8000';
 const API_TARGET_FEDERATED = process.env.API_TARGET_FEDERATED || API_TARGET.replace('game-api', 'game-api-federated');
-const DASHBOARD_API_URL = process.env.DASHBOARD_API_URL || '';
+const AGENT_URL = process.env.AGENT_URL || '';
 const staticDir = path.resolve(__dirname, './build');
 
-// Fire-and-forget: tell dashboard-api about a Linkerd-level denial
+// Fire-and-forget: tell agent about a Linkerd-level denial
 function reportDenied() {
-  if (!DASHBOARD_API_URL) return;
-  const u = new URL(DASHBOARD_API_URL);
+  if (!AGENT_URL) return;
+  const u = new URL(AGENT_URL);
   const payload = JSON.stringify({});
   const opts = {
     hostname: u.hostname,

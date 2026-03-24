@@ -27,9 +27,9 @@ spec:
         redis:
           deploy: true
           url: "redis://redis.tetris.svc.cluster.local:6379"
-        dashboardApi:
+        agent:
           image:
-            repository: dashboard-api
+            repository: agent
             tag: local
         game:
           image:
@@ -79,9 +79,9 @@ spec:
         redis:
           deploy: false
           url: "redis://redis-tetris-ap-east.tetris.svc.cluster.local:6379"
-        dashboardApi:
+        agent:
           image:
-            repository: dashboard-api
+            repository: agent
             tag: local
         game:
           image:
@@ -131,9 +131,9 @@ spec:
         redis:
           deploy: false
           url: "redis://redis-tetris-ap-east.tetris.svc.cluster.local:6379"
-        dashboardApi:
+        agent:
           image:
-            repository: dashboard-api
+            repository: agent
             tag: local
         game:
           image:

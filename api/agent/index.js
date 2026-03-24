@@ -261,12 +261,12 @@ async function deleteHTTPRoute() {
 const POD_NAMESPACE = process.env.POD_NAMESPACE || 'default';
 
 /**
- * Forward a scale request to a remote cluster's dashboard-api via Linkerd
+ * Forward a scale request to a remote cluster's agent via Linkerd
  * service mirroring.  The mirrored service is:
- *   dashboard-api-{cluster}.{namespace}.svc.cluster.local
+ *   agent-{cluster}.{namespace}.svc.cluster.local
  */
 async function proxyScale(cluster, path, body) {
-  const url = `http://dashboard-api-${cluster}.${POD_NAMESPACE}.svc.cluster.local${path}`;
+  const url = `http://agent-${cluster}.${POD_NAMESPACE}.svc.cluster.local${path}`;
   const resp = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -701,7 +701,7 @@ app.post('/api/admin/toggle-mtls', async (req, res) => {
         }
       }
     } else {
-      // Remote cluster: proxy to remote dashboard-api
+      // Remote cluster: proxy to remote agent
       try {
         await proxyScale(c, '/api/admin/toggle-mtls', req.body);
       } catch (proxyErr) {
@@ -739,8 +739,8 @@ app.post('/api/admin/set-auth-policy', async (req, res) => {
     await redis.hset(k(c, 'game:state'), 'auth_policy_enabled', enabled ? '1' : '0');
     await redis.hset(k(c, 'game:state'), 'auth_policy_allowed_users', JSON.stringify(allowedUsers));
 
-    // Always include dashboard-api and dashboard in the policy
-    const ALWAYS_ALLOWED = ['dashboard-api', 'dashboard'];
+    // Always include agent and dashboard in the policy
+    const ALWAYS_ALLOWED = ['agent', 'dashboard'];
     const allAllowed = [...new Set([...ALWAYS_ALLOWED, ...allowedUsers])];
 
     if (c === CLUSTER_NAME) {
@@ -968,5 +968,5 @@ app.get('/healthz', (_req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Dashboard API listening on port ${PORT}, Redis at ${REDIS_URL}`);
+  console.log(`Agent listening on port ${PORT}, Redis at ${REDIS_URL}`);
 });

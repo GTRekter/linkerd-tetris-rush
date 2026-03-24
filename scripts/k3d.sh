@@ -15,7 +15,7 @@ cluster_contexts=(
     "k3d-${project_prefix}-ap-south"
 )
 dashboard_image_tag="dashboard:local"
-dashboard_api_image_tag="dashboard-api:local"
+agent_image_tag="agent:local"
 game_image_tag="game:local"
 game_api_image_tag="game-api:local"
 application_namespace="tetris"
@@ -213,7 +213,7 @@ done
 
 echo "Building container images"
 docker build -t "$dashboard_image_tag"     -f "$directory_root/dashboard/Dockerfile"          "$directory_root"
-docker build -t "$dashboard_api_image_tag" -f "$directory_root/api/dashboard-api/Dockerfile" "$directory_root"
+docker build -t "$agent_image_tag" -f "$directory_root/api/agent/Dockerfile" "$directory_root"
 docker build -t "$game_image_tag"          -f "$directory_root/tetris/Dockerfile"            "$directory_root"
 docker build -t "$game_api_image_tag"      -f "$directory_root/api/tetris-api/Dockerfile"    "$directory_root"
 
@@ -222,9 +222,9 @@ echo "Importing images into k3d clusters"
 k3d image import "$dashboard_image_tag" -c "${cluster_contexts[0]#k3d-}"
 echo "Dashboard image imported into ${cluster_contexts[0]}"
 
-# Dashboard API and game images go to all clusters
+# Agent and game images go to all clusters
 for cluster in "${cluster_contexts[@]}"; do
-    k3d image import "$dashboard_api_image_tag" -c "${cluster#k3d-}"
+    k3d image import "$agent_image_tag" -c "${cluster#k3d-}"
     k3d image import "$game_image_tag"          -c "${cluster#k3d-}"
     k3d image import "$game_api_image_tag"      -c "${cluster#k3d-}"
     echo "Images imported into $cluster"
@@ -243,8 +243,8 @@ helm --kube-context="$dashboard_context" upgrade --install tetris "$directory_ro
     --set "redis.url=redis://redis.${application_namespace}.svc.cluster.local:6379" \
     --set "dashboard.image.repository=${dashboard_image_tag%:*}" \
     --set "dashboard.image.tag=${dashboard_image_tag#*:}" \
-    --set "dashboardApi.image.repository=${dashboard_api_image_tag%:*}" \
-    --set "dashboardApi.image.tag=${dashboard_api_image_tag#*:}" \
+    --set "agent.image.repository=${agent_image_tag%:*}" \
+    --set "agent.image.tag=${agent_image_tag#*:}" \
     --set "game.image.repository=${game_image_tag%:*}" \
     --set "game.image.tag=${game_image_tag#*:}" \
     --set "gameApi.image.repository=${game_api_image_tag%:*}" \
@@ -281,8 +281,8 @@ for i in "${!cluster_contexts[@]}"; do
         --set "redis.url=redis://${redis_lb_ip}:6379" \
         --set "dashboard.image.repository=${dashboard_image_tag%:*}" \
         --set "dashboard.image.tag=${dashboard_image_tag#*:}" \
-        --set "dashboardApi.image.repository=${dashboard_api_image_tag%:*}" \
-        --set "dashboardApi.image.tag=${dashboard_api_image_tag#*:}" \
+        --set "agent.image.repository=${agent_image_tag%:*}" \
+        --set "agent.image.tag=${agent_image_tag#*:}" \
         --set "game.image.repository=${game_image_tag%:*}" \
         --set "game.image.tag=${game_image_tag#*:}" \
         --set "gameApi.image.repository=${game_api_image_tag%:*}" \

@@ -27,11 +27,11 @@ dashboard:
     tag: local
     pullPolicy: IfNotPresent
 
-# Dashboard admin API — k8s scaling, admin commands
-dashboardApi:
+# Agent — k8s scaling, admin commands
+agent:
   replicaCount: 1
   image:
-    repository: dashboard-api
+    repository: agent
     tag: local
     pullPolicy: IfNotPresent
 
