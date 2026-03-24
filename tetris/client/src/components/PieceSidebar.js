@@ -16,9 +16,6 @@ const PieceSidebar = ({ lastPieceMeta, feed }) => (
                     {lastPieceMeta.corrupted && (
                         <span className="badge bg-danger" style={{ fontSize: '0.6rem' }}>TAMPERED</span>
                     )}
-                    {lastPieceMeta.egress && (
-                        <span className="badge bg-info text-dark" style={{ fontSize: '0.6rem' }}>EGRESS</span>
-                    )}
                 </div>
                 <div style={{ fontSize: '0.72rem' }}>
                     <span
@@ -56,7 +53,6 @@ const PieceSidebar = ({ lastPieceMeta, feed }) => (
                             : <span style={{ color: PIECE_COLORS[item.piece], fontSize: '0.75rem', fontWeight: 700 }}>{item.piece}</span>
                         }
                         {item.corrupted && <span style={{ fontSize: '0.6rem' }}>&#x26A0;</span>}
-                        {item.egress && <span style={{ fontSize: '0.6rem' }}>&#x1F310;</span>}
                         <span className="ms-auto text-white-50" style={{ fontSize: '0.65rem' }}>
                             {item.denied ? '' : `${item.latency}ms`}
                         </span>

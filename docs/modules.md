@@ -288,7 +288,7 @@ curl -X POST http://localhost:8090/api/admin/set-mode \
   -d '{"token": "demo-admin-2024", "mode": "gateway"}'
 ```
 
-The dashboard-api patches the `tetris-api` Service labels and updates the HTTPRoute backends via the Kubernetes API. The change takes effect immediately — no pod restart required.
+The agent patches the `tetris-api` Service labels and updates the HTTPRoute backends via the Kubernetes API. The change takes effect immediately — no pod restart required.
 
 ### Demo talking points
 
@@ -305,7 +305,7 @@ service:
   mode: federated   # federated | mirrored | gateway
 ```
 
-Mirrored backend names (e.g., `tetris-api-vastaya-ap-central`, `tetris-api-vastaya-ap-south`) are discovered dynamically by the dashboard-api at runtime via Linkerd's service mirror controller — no static backend list is needed in the Helm values.
+Mirrored backend names (e.g., `tetris-api-vastaya-ap-central`, `tetris-api-vastaya-ap-south`) are discovered dynamically by the agent at runtime via Linkerd's service mirror controller — no static backend list is needed in the Helm values.
 
 ---
 

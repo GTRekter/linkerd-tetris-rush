@@ -2,7 +2,7 @@ import './ScoreSidebar.css';
 
 const ScoreSidebar = ({
     score, lines, level,
-    scenario, mtlsEnabled, authPolicyEnabled, egressEnabled,
+    scenario, mtlsEnabled, authPolicyEnabled,
     leaderboard, onToggleLeaderboard,
 }) => (
     <div className="tetris-sidebar-left">
@@ -26,9 +26,6 @@ const ScoreSidebar = ({
             )}
             {scenario === 'auth-policy' && authPolicyEnabled && (
                 <span className="auth-pill">🛡️</span>
-            )}
-            {scenario === 'egress' && egressEnabled && (
-                <span className="egress-pill">🌐</span>
             )}
         </div>
 
