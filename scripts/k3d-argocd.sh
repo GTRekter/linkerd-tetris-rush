@@ -2,7 +2,13 @@
 set -euo pipefail
 
 # ============================================================
-# Environment variables (with defaults)
+# k3d-argocd.sh — Deploy Tetris Rush via Argo CD
+#
+# This script sets up the same 5-cluster infrastructure as k3d.sh
+# (clusters, networking, Linkerd, multicluster) but instead of
+# deploying the application with Helm, it installs Argo CD on the
+# platform cluster and lets Argo CD manage the full stack via the
+# Application manifests in argo/.
 # ============================================================
 
 directory_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,21 +41,16 @@ game_api_image_tag="game-api:local"
 leaderboard_api_image_tag="leaderboard-api:local"
 
 application_namespace="tetris"
-application_color_map=(
-    "#3b82f6" # blue     — gameplay-east
-    "#8b5cf6" # purple   — gameplay-west
-    "#06b6d4" # cyan     — gameplay-central
-    "#f59e0b" # amber    — scoring
-    "#10b981" # emerald  — platform
-)
 
-# Port mapping per cluster (game LB port, dashboard LB port, API port)
+# Port mapping per cluster (game LB port, dashboard LB port, Argo CD port, API port)
 cluster_game_ports=(8080 8081 8082 8083 0)
 cluster_dash_ports=(0    0    0    0    9090)
+cluster_argocd_ports=(0  0    0    0    9091)
 cluster_api_ports=(6550  6551 6552 6553 6554)
 
 echo "============================================"
 echo "  Tetris Rush - k3d 5-Cluster Setup"
+echo "  (Argo CD mode)"
 echo "============================================"
 echo ""
 
@@ -104,6 +105,7 @@ for i in "${!cluster_contexts[@]}"; do
     api_port="${cluster_api_ports[$i]}"
     game_port="${cluster_game_ports[$i]}"
     dash_port="${cluster_dash_ports[$i]}"
+    argocd_port="${cluster_argocd_ports[$i]}"
 
     port_args=()
     if [[ "$game_port" -gt 0 ]]; then
@@ -111,6 +113,9 @@ for i in "${!cluster_contexts[@]}"; do
     fi
     if [[ "$dash_port" -gt 0 ]]; then
         port_args+=(-p "${dash_port}:8090@loadbalancer")
+    fi
+    if [[ "$argocd_port" -gt 0 ]]; then
+        port_args+=(-p "${argocd_port}:8443@loadbalancer")
     fi
 
     echo "Creating cluster: $cluster_name"
@@ -158,7 +163,7 @@ done
 echo "CoreDNS updated"
 
 # ============================================================
-# Linkerd
+# Linkerd identity certificates
 # ============================================================
 
 echo "Download Linkerd CLI..."
@@ -170,80 +175,20 @@ certificate_directory=$(mktemp -d)
 step certificate create root.linkerd.cluster.local "$certificate_directory/ca.crt" "$certificate_directory/ca.key" --profile root-ca --no-password --insecure --force
 step certificate create identity.linkerd.cluster.local "$certificate_directory/issuer.crt" "$certificate_directory/issuer.key" --ca "$certificate_directory/ca.crt" --ca-key "$certificate_directory/ca.key" --profile intermediate-ca --not-after 8760h --no-password --insecure --force
 
+echo "Applying Linkerd identity certificates to all clusters..."
 for context in "${cluster_contexts[@]}"; do
-    echo "Installing Gateway API CRDs"
-    kubectl --context="$context" apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml
-
-    echo "Installing Linkerd CRDs..."
-    linkerd --context="$context" install --crds | kubectl --context="$context" apply -f -
-
-    echo "Installing Linkerd Control Plane..."
-    linkerd --context="$context" install \
-        --identity-trust-anchors-file "$certificate_directory/ca.crt" \
-        --identity-issuer-certificate-file "$certificate_directory/issuer.crt" \
-        --identity-issuer-key-file "$certificate_directory/issuer.key" \
-        | kubectl --context="$context" apply -f -
-
-    echo "Waiting for Linkerd to be ready on $context..."
-    linkerd --context="$context" check --wait 2m
+    kubectl --context="$context" create namespace linkerd 2>/dev/null || true
+    kubectl --context="$context" -n linkerd create secret tls linkerd-identity-issuer \
+        --cert="$certificate_directory/issuer.crt" \
+        --key="$certificate_directory/issuer.key" \
+        --dry-run=client -o yaml | kubectl --context="$context" apply -f -
+    kubectl --context="$context" -n linkerd create configmap linkerd-identity-trust-roots \
+        --from-file=ca-bundle.crt="$certificate_directory/ca.crt" \
+        --dry-run=client -o yaml | kubectl --context="$context" apply -f -
 done
 
 # ============================================================
-# Linkerd Multicluster Configuration
-# ============================================================
-
-for context in "${cluster_contexts[@]}"; do
-    echo "Installing Linkerd Multicluster on $context..."
-    echo "Note: We will deploy the gateway even if the network is flat to cover multiple scenarios"
-
-    controller_sets=()
-    idx=0
-    for other in "${cluster_contexts[@]}"; do
-        [ "$other" = "$context" ] && continue
-        controller_sets+=(--set "controllers[$idx].link.ref.name=${other#k3d-}")
-        idx=$((idx + 1))
-    done
-
-    linkerd --context="$context" multicluster install \
-        --gateway \
-        "${controller_sets[@]}" \
-        | kubectl --context="$context" apply -f -
-done
-
-echo "Waiting for linkerd-gateway to get an external IP in all clusters..."
-for context in "${cluster_contexts[@]}"; do
-    echo -n "  Waiting for $context..."
-    while true; do
-        ip=$(kubectl --context="$context" -n linkerd-multicluster get svc linkerd-gateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-        if [[ -n "$ip" ]]; then
-            echo " $ip"
-            break
-        fi
-        echo -n "."
-        sleep 3
-    done
-done
-
-for src in "${cluster_contexts[@]}"; do
-    gw_ip=$(kubectl --context="$src" -n linkerd-multicluster get svc linkerd-gateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-    gw_port=$(kubectl --context="$src" -n linkerd-multicluster get svc linkerd-gateway -o jsonpath='{.spec.ports[?(@.name=="mc-gateway")].port}')
-    # Get the internal Docker network IP of the k3d API server node
-    src_node="${src#k3d-}"
-    src_api_ip=$(docker inspect "k3d-${src_node}-server-0" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
-    for dst in "${cluster_contexts[@]}"; do
-        [ "$src" = "$dst" ] && continue
-        echo "Linking $src into $dst..."
-        linkerd --context="$src" multicluster link-gen \
-            --cluster-name "${src#k3d-}" \
-            --gateway-addresses "$gw_ip" \
-            --gateway-port "$gw_port" \
-            --api-server-address "https://${src_api_ip}:6443" \
-            | kubectl --context="$dst" apply -f -
-    done
-done
-
-# ============================================================
-# Application Setup
+# Build and import container images
 # ============================================================
 
 echo "Building container images"
@@ -254,7 +199,6 @@ docker build -t "$game_api_image_tag"           -f "$directory_root/api/tetris-a
 docker build -t "$leaderboard_api_image_tag"    -f "$directory_root/api/leaderboard-api/Dockerfile"    "$directory_root"
 
 echo "Importing images into k3d clusters"
-# Import images per cluster role
 for i in "${!cluster_contexts[@]}"; do
     cluster="${cluster_contexts[$i]}"
     role="${cluster_roles[$i]}"
@@ -278,89 +222,129 @@ for i in "${!cluster_contexts[@]}"; do
 done
 
 # ============================================================
-# Helm Deployments
+# Argo CD installation
 # ============================================================
 
-echo "Deploying application with Helm"
+echo "Installing Argo CD on the platform cluster..."
+kubectl --context=k3d-platform create namespace argocd 2>/dev/null || true
+kubectl --context=k3d-platform apply -n argocd \
+    -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+echo "Waiting for Argo CD server to be ready..."
+kubectl --context=k3d-platform -n argocd rollout status deploy argocd-server --timeout=3m
 
-# --- 1) Deploy scoring cluster first (has Redis) ---
-scoring_context="k3d-scoring"
-echo "Deploying scoring cluster..."
-helm --kube-context="$scoring_context" upgrade --install tetris "$directory_root/helm/tetris" \
-    --namespace "$application_namespace" --create-namespace \
-    --set "game.enabled=false" \
-    --set "gameApi.enabled=false" \
-    --set "agent.enabled=false" \
-    --set "dashboard.enabled=false" \
-    --set "leaderboardApi.enabled=true" \
-    --set "redis.deploy=true" \
-    --set "redis.url=redis://redis.${application_namespace}.svc.cluster.local:6379" \
-    --set "cluster.name=scoring" \
-    --set "cluster.region=scoring" \
-    --set "cluster.color=#f59e0b" \
-    --set "externalUrl=http://scoring.localhost:8083"
+echo "Exposing Argo CD UI via LoadBalancer on port 9091..."
+kubectl --context=k3d-platform -n argocd patch svc argocd-server \
+    -p '{"spec": {"type": "LoadBalancer", "ports": [{"name": "https", "port": 8443, "targetPort": 8080, "protocol": "TCP"}]}}'
 
-# Wait for Redis LoadBalancer IP
-echo -n "Waiting for Redis LoadBalancer IP..."
-redis_lb_ip=""
-while true; do
-    redis_lb_ip=$(kubectl --context="$scoring_context" -n "$application_namespace" get svc redis -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-    if [[ -n "$redis_lb_ip" ]]; then
-        echo " $redis_lb_ip"
-        break
+# ============================================================
+# Register remote clusters with Argo CD
+# ============================================================
+
+echo "Registering remote clusters with Argo CD..."
+remote_clusters=("k3d-gameplay-east" "k3d-gameplay-west" "k3d-gameplay-central" "k3d-scoring")
+for remote in "${remote_clusters[@]}"; do
+    remote_name="${remote#k3d-}"
+    remote_node="k3d-${remote_name}-server-0"
+    remote_api_ip=$(docker inspect "$remote_node" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
+
+    # Create a service account for Argo CD on the remote cluster
+    kubectl --context="$remote" create serviceaccount argocd-manager -n kube-system 2>/dev/null || true
+    kubectl --context="$remote" create clusterrolebinding argocd-manager \
+        --clusterrole=cluster-admin --serviceaccount=kube-system:argocd-manager 2>/dev/null || true
+
+    # Create a long-lived token secret for the service account
+    cat <<EOSECRET | kubectl --context="$remote" apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  name: argocd-manager-token
+  namespace: kube-system
+  annotations:
+    kubernetes.io/service-account.name: argocd-manager
+type: kubernetes.io/service-account-token
+EOSECRET
+
+    # Wait for the token to be populated
+    for _ in $(seq 1 30); do
+        token=$(kubectl --context="$remote" -n kube-system get secret argocd-manager-token -o jsonpath='{.data.token}' 2>/dev/null || true)
+        if [[ -n "$token" ]]; then break; fi
+        sleep 1
+    done
+    token=$(echo "$token" | base64 -d)
+
+    # Create the Argo CD cluster secret on the platform cluster
+    cat <<EOSECRET | kubectl --context=k3d-platform apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cluster-${remote_name}
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: cluster
+type: Opaque
+stringData:
+  name: "${remote_name}"
+  server: "https://${remote_api_ip}:6443"
+  config: |
+    {
+      "bearerToken": "${token}",
+      "tlsClientConfig": {
+        "insecure": true
+      }
+    }
+EOSECRET
+    echo "  Registered cluster: $remote_name (${remote_api_ip})"
+done
+
+# ============================================================
+# Apply Argo CD manifests
+# ============================================================
+
+echo "Generating Argo CD manifests with actual cluster server URLs..."
+argo_temp=$(mktemp -d)
+cp "$directory_root"/argo/*.yaml "$argo_temp/"
+
+# Replace placeholder server URLs with actual Docker-internal IPs
+for remote in "${remote_clusters[@]}"; do
+    remote_name="${remote#k3d-}"
+    remote_node="k3d-${remote_name}-server-0"
+    remote_api_ip=$(docker inspect "$remote_node" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
+    sed -i.bak "s|https://${remote_name}:6443|https://${remote_api_ip}:6443|g" "$argo_temp"/*.yaml
+done
+
+# Platform cluster uses in-cluster URL
+sed -i.bak "s|https://platform:6443|https://kubernetes.default.svc|g" "$argo_temp"/*.yaml
+rm -f "$argo_temp"/*.bak
+
+echo "Applying Argo CD manifests..."
+kubectl --context=k3d-platform apply -f "$argo_temp/"
+rm -rf "$argo_temp"
+
+# ============================================================
+# Multicluster links (dynamic — cannot be in Git)
+# ============================================================
+
+echo "Generating Linkerd multicluster links..."
+echo "Note: These are dynamic and generated per-environment."
+for src in "${cluster_contexts[@]}"; do
+    gw_ip=$(kubectl --context="$src" -n linkerd-multicluster get svc linkerd-gateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+    if [[ -z "$gw_ip" ]]; then
+        echo "  Skipping $src — no gateway IP yet (Argo CD will deploy Linkerd multicluster first)"
+        continue
     fi
-    echo -n "."
-    sleep 3
-done
-
-# --- 2) Deploy gameplay clusters ---
-gameplay_contexts=("k3d-gameplay-east" "k3d-gameplay-west" "k3d-gameplay-central")
-gameplay_colors=("#3b82f6" "#8b5cf6" "#06b6d4")
-gameplay_ports=(8080 8081 8082)
-
-for i in "${!gameplay_contexts[@]}"; do
-    context="${gameplay_contexts[$i]}"
-    cluster_name="${context#k3d-}"
-    color="${gameplay_colors[$i]}"
-    port="${gameplay_ports[$i]}"
-
-    echo "Deploying gameplay cluster: $cluster_name"
-    helm --kube-context="$context" upgrade --install tetris "$directory_root/helm/tetris" \
-        --namespace "$application_namespace" --create-namespace \
-        --set "game.enabled=true" \
-        --set "gameApi.enabled=true" \
-        --set "agent.enabled=true" \
-        --set "dashboard.enabled=false" \
-        --set "leaderboardApi.enabled=false" \
-        --set "redis.deploy=false" \
-        --set "redis.url=redis://${redis_lb_ip}:6379" \
-        --set "leaderboardApiUrl=http://leaderboard-api-scoring.${application_namespace}.svc.cluster.local" \
-        --set "cluster.name=${cluster_name}" \
-        --set "cluster.region=${cluster_name}" \
-        --set "cluster.color=${color}" \
-        --set "externalUrl=http://${cluster_name}.localhost:${port}"
-done
-
-# --- 3) Deploy platform cluster ---
-platform_context="k3d-platform"
-echo "Deploying platform cluster..."
-helm --kube-context="$platform_context" upgrade --install tetris "$directory_root/helm/tetris" \
-    --namespace "$application_namespace" --create-namespace \
-    --set "game.enabled=false" \
-    --set "gameApi.enabled=false" \
-    --set "agent.enabled=true" \
-    --set "dashboard.enabled=true" \
-    --set "leaderboardApi.enabled=false" \
-    --set "redis.deploy=false" \
-    --set "redis.url=redis://${redis_lb_ip}:6379" \
-    --set "cluster.name=platform" \
-    --set "cluster.region=platform" \
-    --set "cluster.color=#10b981" \
-    --set "externalUrl=http://platform.localhost:9090"
-
-echo "Waiting for application to be ready in all clusters..."
-for context in "${cluster_contexts[@]}"; do
-    kubectl --context="$context" -n "$application_namespace" rollout restart deploy -n "$application_namespace" 2>/dev/null || true
+    gw_port=$(kubectl --context="$src" -n linkerd-multicluster get svc linkerd-gateway -o jsonpath='{.spec.ports[?(@.name=="mc-gateway")].port}')
+    src_node="${src#k3d-}"
+    src_api_ip=$(docker inspect "k3d-${src_node}-server-0" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
+    for dst in "${cluster_contexts[@]}"; do
+        [ "$src" = "$dst" ] && continue
+        echo "  Linking $src into $dst..."
+        linkerd --context="$src" multicluster link-gen \
+            --cluster-name "${src#k3d-}" \
+            --gateway-addresses "$gw_ip" \
+            --gateway-port "$gw_port" \
+            --api-server-address "https://${src_api_ip}:6443" \
+            | kubectl --context="$dst" apply -f -
+    done
 done
 
 # ============================================================
@@ -369,9 +353,12 @@ done
 echo ""
 echo "  ======================================"
 echo ""
-echo "All clusters and application deployed successfully!"
+echo "All clusters deployed successfully!"
+echo "Argo CD is managing the application stack."
 echo ""
 echo "Tetris (players):"
+gameplay_contexts=("k3d-gameplay-east" "k3d-gameplay-west" "k3d-gameplay-central")
+gameplay_ports=(8080 8081 8082)
 for i in "${!gameplay_contexts[@]}"; do
     cluster_name="${gameplay_contexts[$i]#k3d-}"
     echo "  http://${cluster_name}.localhost:${gameplay_ports[$i]}"
@@ -379,6 +366,20 @@ done
 echo ""
 echo "Dashboard (presenter):"
 echo "  http://platform.localhost:9090"
+echo ""
+echo "Argo CD:"
+echo "  https://platform.localhost:9091"
+echo "  Username: admin"
+echo -n "  Password: "
+for _ in $(seq 1 30); do
+    pw=$(kubectl --context=k3d-platform -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' 2>/dev/null || true)
+    if [[ -n "$pw" ]]; then
+        echo "$pw" | base64 -d
+        echo ""
+        break
+    fi
+    sleep 2
+done
 echo ""
 echo "Kubernetes Resources:"
 for context in "${cluster_contexts[@]}"; do

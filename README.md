@@ -31,7 +31,8 @@ linkerd-tetris-rush/
 │   └── client/src/          # React dashboard frontend
 ├── helm/tetris/             # Helm chart for all components
 ├── scripts/
-│   ├── k3d.sh               # Multi-cluster setup automation
+│   ├── k3d.sh               # Multi-cluster setup (direct Helm)
+│   ├── k3d-argocd.sh        # Multi-cluster setup (Argo CD)
 │   └── local-dev.sh         # Local development helper
 └── docs/                    # Architecture and deployment guides
 ```
@@ -152,7 +153,7 @@ After deployment, the following endpoints are available:
 | Player (gameplay-west) | `http://gameplay-west.localhost:8081` | Tetris game |
 | Player (gameplay-central) | `http://gameplay-central.localhost:8082` | Tetris game |
 | Presenter Dashboard | `http://platform.localhost:9090` | Admin dashboard |
-| Argo CD | `https://platform.localhost:9091` | GitOps UI (when using `--argocd` flag) |
+| Argo CD | `https://platform.localhost:9091` | GitOps UI (when using `k3d-argocd.sh`) |
 
 ## Debug
 
