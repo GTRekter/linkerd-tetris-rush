@@ -1,8 +1,8 @@
 # Build context: repo root
 FROM node:20 AS builder
 WORKDIR /app
-COPY dashboard/client/package.json dashboard/client/yarn.lock ./
-RUN yarn install --frozen-lockfile
+COPY dashboard/client/package.json ./
+RUN yarn install
 COPY dashboard/client/ .
 RUN yarn build
 
