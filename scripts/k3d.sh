@@ -46,6 +46,14 @@ if ! command -v docker &>/dev/null; then
     echo "Error: Docker is not installed. Please install it from https://www.docker.com/get-started" >&2
     exit 1
 fi
+if ! command -v helm &>/dev/null; then
+    echo "Error: Helm is not installed. Please install it from https://helm.sh/docs/intro/install/" >&2
+    exit 1
+fi
+if [ -z "${BUOYANT_LICENSE:-}" ]; then
+    echo "Error: BUOYANT_LICENSE environment variable is not set. Please set it to your Linkerd Enterprise license key." >&2
+    exit 1
+fi
 
 # ============================================================
 # K3D cluster configuration
@@ -119,7 +127,7 @@ echo "CoreDNS updated"
 # ============================================================
 
 echo "Download Linkerd CLI..."
-curl -sL https://run.linkerd.io/install-edge | sh
+curl --proto '=https' --tlsv1.2 -sSfL https://enterprise.buoyant.io/install | sh
 export PATH="$HOME/.linkerd2/bin:$PATH"
 
 echo "Generating identity certificates..."
@@ -148,6 +156,7 @@ done
 # ============================================================
 # Linkerd Multicluster Configuration
 # ============================================================
+
 for context in "${cluster_contexts[@]}"; do
     echo "Installing Linkerd Multicluster on $context..."
     echo "Note: We will deploy the gateway even if the network is flat to cover multiple scenarios"
@@ -223,33 +232,53 @@ done
 
 echo "Deploying application with Helm"
 dashboard_cluster_name="${cluster_contexts[0]#k3d-}"
+dashboard_context="${cluster_contexts[0]}"
 
+# Deploy the first cluster (dashboard + Redis) first
+echo "Deploying dashboard cluster: $dashboard_cluster_name"
+helm --kube-context="$dashboard_context" upgrade --install tetris "$directory_root/helm/tetris" \
+    --namespace "$application_namespace" --create-namespace \
+    --set "dashboard.enabled=true" \
+    --set "redis.deploy=true" \
+    --set "redis.url=redis://redis.${application_namespace}.svc.cluster.local:6379" \
+    --set "dashboardFrontend.image.repository=${dashboard_frontend_image_tag%:*}" \
+    --set "dashboardFrontend.image.tag=${dashboard_frontend_image_tag#*:}" \
+    --set "dashboardApi.image.repository=${dashboard_api_image_tag%:*}" \
+    --set "dashboardApi.image.tag=${dashboard_api_image_tag#*:}" \
+    --set "tetrisFrontend.image.repository=${tetris_frontend_image_tag%:*}" \
+    --set "tetrisFrontend.image.tag=${tetris_frontend_image_tag#*:}" \
+    --set "tetrisApi.image.repository=${tetris_api_image_tag%:*}" \
+    --set "tetrisApi.image.tag=${tetris_api_image_tag#*:}" \
+    --set "cluster.name=${dashboard_cluster_name}" \
+    --set "cluster.region=${dashboard_cluster_name}" \
+    --set "cluster.color=${application_color_map[0]}" \
+    --set "externalUrl=http://${dashboard_cluster_name}.localhost:8080"
+
+# Wait for Redis LoadBalancer IP
+echo -n "Waiting for Redis LoadBalancer IP..."
+redis_lb_ip=""
+while true; do
+    redis_lb_ip=$(kubectl --context="$dashboard_context" -n "$application_namespace" get svc redis -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+    if [[ -n "$redis_lb_ip" ]]; then
+        echo " $redis_lb_ip"
+        break
+    fi
+    echo -n "."
+    sleep 3
+done
+
+# Deploy remaining clusters using the Redis LoadBalancer IP
 for i in "${!cluster_contexts[@]}"; do
+    [ "$i" = "0" ] && continue
     context="${cluster_contexts[$i]}"
     cluster_name="${context#k3d-}"
 
-    # Only deploy the dashboard and Redis on the first cluster
-    dashboard_enabled="false"
-    redis_deploy="false"
-    if [ "$i" = "0" ]; then
-        dashboard_enabled="true"
-        redis_deploy="true"
-    fi
-
-    # All clusters share the Redis instance on the first cluster.
-    # Use the Linkerd multicluster mirrored service name so peer clusters
-    # can reach it through the mesh.
-    redis_url="redis://redis-${dashboard_cluster_name}.${application_namespace}.svc.cluster.local:6379"
-    if [ "$i" = "0" ]; then
-        # The first cluster uses its own local Redis service directly
-        redis_url="redis://redis.${application_namespace}.svc.cluster.local:6379"
-    fi
-
+    echo "Deploying cluster: $cluster_name"
     helm --kube-context="$context" upgrade --install tetris "$directory_root/helm/tetris" \
         --namespace "$application_namespace" --create-namespace \
-        --set "dashboard.enabled=${dashboard_enabled}" \
-        --set "redis.deploy=${redis_deploy}" \
-        --set "redis.url=${redis_url}" \
+        --set "dashboard.enabled=false" \
+        --set "redis.deploy=false" \
+        --set "redis.url=redis://${redis_lb_ip}:6379" \
         --set "dashboardFrontend.image.repository=${dashboard_frontend_image_tag%:*}" \
         --set "dashboardFrontend.image.tag=${dashboard_frontend_image_tag#*:}" \
         --set "dashboardApi.image.repository=${dashboard_api_image_tag%:*}" \
@@ -285,4 +314,10 @@ done
 echo ""
 echo "Dashboard (presenter):"
 echo "  http://${dashboard_cluster_name}.localhost:9090"
+echo ""
+echo "Kubernetes Resources (presenter):"
+for i in "${!cluster_contexts[@]}"; do
+    cluster_name="${cluster_contexts[$i]#k3d-}"
+    echo "  watch kubectl --context=${cluster_contexts[$i]} get pods,svc,httproutes,server -A"
+done
 echo "  ======================================"

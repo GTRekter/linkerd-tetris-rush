@@ -1,0 +1,57 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: linkerd-control-plane
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - cluster: vastaya-ap-east
+            server: "https://vastaya-ap-east:6443"
+          - cluster: vastaya-ap-central
+            server: "https://vastaya-ap-central:6443"
+          - cluster: vastaya-ap-south
+            server: "https://vastaya-ap-south:6443"
+  template:
+    metadata:
+      name: "linkerd-control-plane-{{ .cluster }}"
+      annotations:
+        argocd.argoproj.io/sync-wave: "2"
+    spec:
+      project: vastaya
+      source:
+        repoURL: https://helm.buoyant.cloud
+        chart: linkerd-enterprise-control-plane
+        targetRevision: "*"
+        helm:
+          valuesObject:
+            identity:
+              externalCA: true
+              issuer:
+                scheme: kubernetes.io/tls
+            identityTrustAnchorsPEM: ""
+      destination:
+        server: "{{ .server }}"
+        namespace: linkerd
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+      ignoreDifferences:
+        - group: ""
+          kind: Secret
+          name: linkerd-identity-issuer
+          jsonPointers:
+            - /data
+        - group: ""
+          kind: ConfigMap
+          name: linkerd-identity-trust-roots
+          jsonPointers:
+            - /data

@@ -87,10 +87,22 @@ export function useGame() {
                 const res = await apiFetchNextPiece(pid);
 
                 if (res.status === 403) {
-                    const err = await res.json();
+                    let cluster = 'DENIED';
+                    try {
+                        const err = await res.json();
+                        cluster = err.detail?.cluster || 'DENIED';
+                    } catch { /* Linkerd Server deny returns non-JSON body */ }
                     setRetryCount(c => c + 1);
-                    addFeedItem({ cluster: err.detail?.cluster || 'DENIED', clusterColor: '#ef4444', piece: '?', latency: 0, denied: true, corrupted: false });
-                    showStatus('warning', 'AuthPolicy: request denied — Linkerd retrying on next cluster');
+                    addFeedItem({ cluster, clusterColor: '#ef4444', piece: '?', latency: 0, denied: true, corrupted: false });
+                    showStatus('warning', 'Access denied — traffic blocked by Server policy');
+                    await new Promise(r => setTimeout(r, 800));
+                    continue;
+                }
+
+                if (res.status === 502) {
+                    setRetryCount(c => c + 1);
+                    addFeedItem({ cluster: 'DENIED', clusterColor: '#ef4444', piece: '?', latency: 0, denied: true, corrupted: false });
+                    showStatus('warning', 'Access denied — traffic blocked by Server policy');
                     await new Promise(r => setTimeout(r, 800));
                     continue;
                 }
@@ -105,7 +117,7 @@ export function useGame() {
                 const data = await res.json();
                 const piece = buildPiece(data);
 
-                if (data.corrupted) showStatus('danger', `Piece tampered! Expected ${data.corrupted_from}, got ${piece.type} — mTLS is OFF`, 4000);
+                if (data.corrupted) showStatus('danger', `mTLS OFF — piece intercepted! ${data.corrupted_from} → ${piece.type}`, 4000);
                 if (data.egress) showStatus('success', 'Bonus I-piece via egress!', 2000);
 
                 const meta = {
@@ -139,6 +151,7 @@ export function useGame() {
         // Use the queued piece as current (if we have one)
         let currentResult = nextPieceRef.current;
         nextPieceRef.current = null;
+        setNextPieceMeta(null);
 
         // If no queued piece (first piece of the game), fetch one now
         if (!currentResult) {

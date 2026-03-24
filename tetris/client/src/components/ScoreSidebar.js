@@ -1,3 +1,5 @@
+import './ScoreSidebar.css';
+
 const ScoreSidebar = ({
     score, lines, level,
     scenario, mtlsEnabled, authPolicyEnabled, egressEnabled,

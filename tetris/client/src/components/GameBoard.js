@@ -1,4 +1,5 @@
 import { ghostY } from '../services/gameEngine';
+import './GameBoard.css';
 
 const BOARD_W = 10;
 const BOARD_H = 20;
@@ -53,7 +54,7 @@ const GameBoard = ({ board, currentPiece, boardRef, statusMsg, waitingForPiece, 
                             border = locked.clusterColor;
                             cls += locked.corrupted ? ' corrupted' : ' locked';
                         } else if (isActive) {
-                            bg = currentPiece.corrupted ? '#2a2a3e' : currentPiece.color;
+                            bg = currentPiece.corrupted ? '#000000' : currentPiece.color;
                             border = currentPiece.clusterColor;
                             cls += currentPiece.corrupted ? ' active corrupted' : ' active';
                         } else if (isGhost) {

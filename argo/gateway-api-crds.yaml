@@ -1,0 +1,40 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: gateway-api-crds
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - cluster: vastaya-ap-east
+            server: "https://vastaya-ap-east:6443"
+          - cluster: vastaya-ap-central
+            server: "https://vastaya-ap-central:6443"
+          - cluster: vastaya-ap-south
+            server: "https://vastaya-ap-south:6443"
+  template:
+    metadata:
+      name: "gateway-api-crds-{{ .cluster }}"
+      annotations:
+        argocd.argoproj.io/sync-wave: "0"
+    spec:
+      project: vastaya
+      source:
+        repoURL: https://github.com/kubernetes-sigs/gateway-api
+        targetRevision: v1.2.1
+        path: config/crd/standard
+      destination:
+        server: "{{ .server }}"
+        namespace: default
+      syncPolicy:
+        automated:
+          prune: false
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=false
+          - ServerSideApply=true
+          - Replace=true

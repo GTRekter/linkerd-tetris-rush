@@ -1,0 +1,112 @@
+# Linkerd multicluster extension — each cluster gets a gateway and
+# service-mirror controllers pointing to the other two clusters.
+#
+# The k3d.sh script also runs `linkerd multicluster link-gen` to create
+# Link resources and RBAC for cross-cluster discovery. Those Link resources
+# are generated per-environment and should be applied separately (see
+# linkerd-multicluster-link.yaml) or managed via an external secret tool.
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: linkerd-multicluster-vastaya-ap-east
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: vastaya
+  source:
+    repoURL: https://helm.buoyant.cloud
+    chart: linkerd-enterprise-multicluster
+    targetRevision: "*"
+    helm:
+      valuesObject:
+        gateway:
+          enabled: true
+        controllers:
+          - link:
+              ref:
+                name: vastaya-ap-central
+          - link:
+              ref:
+                name: vastaya-ap-south
+  destination:
+    server: "https://vastaya-ap-east:6443"
+    namespace: linkerd-multicluster
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: linkerd-multicluster-vastaya-ap-central
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: vastaya
+  source:
+    repoURL: https://helm.buoyant.cloud
+    chart: linkerd-enterprise-multicluster
+    targetRevision: "*"
+    helm:
+      valuesObject:
+        gateway:
+          enabled: true
+        controllers:
+          - link:
+              ref:
+                name: vastaya-ap-east
+          - link:
+              ref:
+                name: vastaya-ap-south
+  destination:
+    server: "https://vastaya-ap-central:6443"
+    namespace: linkerd-multicluster
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: linkerd-multicluster-vastaya-ap-south
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: vastaya
+  source:
+    repoURL: https://helm.buoyant.cloud
+    chart: linkerd-enterprise-multicluster
+    targetRevision: "*"
+    helm:
+      valuesObject:
+        gateway:
+          enabled: true
+        controllers:
+          - link:
+              ref:
+                name: vastaya-ap-east
+          - link:
+              ref:
+                name: vastaya-ap-central
+  destination:
+    server: "https://vastaya-ap-south:6443"
+    namespace: linkerd-multicluster
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

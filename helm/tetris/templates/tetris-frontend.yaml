@@ -1,0 +1,86 @@
+# tetris-frontend — player-facing Express proxy that serves the game UI
+# and proxies /api/* to tetris-api through the mesh.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tetris-frontend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tetris.labels" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tetris-frontend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tetris.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tetris-frontend
+spec:
+  replicas: {{ .Values.tetrisFrontend.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "tetris.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: tetris-frontend
+  template:
+    metadata:
+      labels:
+        {{- include "tetris.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: tetris-frontend
+      {{- if .Values.linkerd.injectPods }}
+      annotations:
+        linkerd.io/inject: enabled
+      {{- end }}
+    spec:
+      serviceAccountName: tetris-frontend
+      containers:
+        - name: tetris-frontend
+          image: "{{ .Values.tetrisFrontend.image.repository }}:{{ .Values.tetrisFrontend.image.tag }}"
+          imagePullPolicy: {{ .Values.tetrisFrontend.image.pullPolicy }}
+          ports:
+            - containerPort: 80
+          env:
+            - name: API_TARGET
+              value: "http://tetris-api.{{ .Release.Namespace }}.svc.cluster.local"
+            - name: API_TARGET_FEDERATED
+              value: "http://tetris-api-federated.{{ .Release.Namespace }}.svc.cluster.local"
+            - name: DASHBOARD_API_URL
+              value: "http://dashboard-api.{{ .Release.Namespace }}.svc.cluster.local"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tetris-frontend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tetris.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tetris-frontend
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "tetris.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: tetris-frontend

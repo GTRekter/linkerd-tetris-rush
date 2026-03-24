@@ -1,0 +1,33 @@
+/* ── Last piece card ──────────────────────────────────────────────────────── */
+
+.last-piece-card {
+    padding: 0.6rem 0.5rem;
+}
+
+.piece-type-badge {
+    font-size: 1.4rem;
+    font-weight: 900;
+    line-height: 1;
+}
+
+/* ── Feed ─────────────────────────────────────────────────────────────────── */
+
+.tetris-feed {
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.feed-item {
+    animation: slide-in 0.2s ease-out;
+    font-size: 0.7rem;
+}
+
+.feed-item.feed-error {
+    background: rgba(239, 68, 68, 0.08) !important;
+}
+
+.feed-item.feed-intercepted {
+    background: rgba(139, 92, 246, 0.1) !important;
+}

@@ -7,7 +7,6 @@ import {
 import GlobalStats from '../components/GlobalStats';
 import ModeSelector from '../components/ScenarioTabs';
 import ClusterCard from '../components/ClusterCard';
-import TrafficCanvas from '../components/TrafficCanvas';
 import LeaderboardPanel from '../components/LeaderboardPanel';
 import QRCodeSidebar from '../components/QRCodeSidebar';
 import PieceHistogram from '../components/PieceHistogram';
@@ -22,31 +21,11 @@ const DashboardPage = () => {
     const [eventLog, setEventLog] = useState([]);
     const [leaderboard, setLeaderboard] = useState([]);
 
-    const particlesRef = useRef([]);
-    const allRequestsRef = useRef([]);
-    const canvasRef = useRef(null);
     const timerRef = useRef(null);
 
     const addLog = useCallback((cluster, color, text) => {
         const now = new Date().toLocaleTimeString('en-US', { hour12: false });
         setEventLog(prev => [{ time: now, cluster, color, text, id: Date.now() + Math.random() }, ...prev].slice(0, 200));
-    }, []);
-
-    const addParticle = useCallback((color) => {
-        if (!particlesRef.current) return;
-        const canvas = canvasRef.current;
-        const w = canvas ? canvas.width : 600;
-        const h = canvas ? canvas.height : 200;
-        particlesRef.current.push({
-            x: Math.random() * w * 0.25,
-            y: h / 2 + (Math.random() - 0.5) * h * 0.7,
-            targetX: w * 0.5 + Math.random() * w * 0.4,
-            targetY: h / 2 + (Math.random() - 0.5) * h * 0.5,
-            color,
-            progress: 0,
-            speed: 0.014 + Math.random() * 0.018,
-            size: 3 + Math.random() * 3,
-        });
     }, []);
 
     const poll = useCallback(async () => {
@@ -77,15 +56,6 @@ const DashboardPage = () => {
                     for (let i = 0; i < delta; i++) requestTimes.push(Date.now());
                     const cutoff = Date.now() - 10000;
                     const filtered = requestTimes.filter(t => t > cutoff);
-                    if (delta > 0) {
-                        addParticle(clusterMeta.color);
-                        allRequestsRef.current.push({
-                            cluster: name,
-                            cluster_color: clusterMeta.color,
-                            receivedAt: Date.now(),
-                        });
-                        if (allRequestsRef.current.length > 500) allRequestsRef.current.splice(0, 100);
-                    }
                     const wasHealthy = existing.info?.healthy;
                     const wasOffline = existing.offline !== false;
                     if (wasOffline && info.healthy) {
@@ -111,8 +81,9 @@ const DashboardPage = () => {
                             pieces: newPieces,
                             players: users.player_count || 0,
                             latency_ms: latency.artificial_latency_ms || 0,
+                            failure_enabled: latency.failure_enabled || false,
                             rps: +(filtered.length / 10).toFixed(1),
-                            denied: existing.stats?.denied || 0,
+                            denied: pieces.denied_count || 0,
                             corrupted: existing.stats?.corrupted || 0,
                         },
                         requestTimes: filtered,
@@ -120,6 +91,7 @@ const DashboardPage = () => {
                         interceptor_active: info.interceptor_active || false,
                         intercepted_count: info.intercepted_count || 0,
                         auth_policy_enabled: info.auth_policy_enabled || false,
+                        access_policy: info.access_policy || 'all-unauthenticated',
                         traffic_weights: info.traffic_weights || {},
                         piece_type_counts: pieces.piece_type_counts || {},
                     };
@@ -139,7 +111,7 @@ const DashboardPage = () => {
                 return next;
             });
         }
-    }, [addLog, addParticle]);
+    }, [addLog]);
 
     const loadLeaderboard = useCallback(async () => {
         try {
@@ -178,6 +150,7 @@ const DashboardPage = () => {
     const handleScaleDown = useCallback((cluster) => requestWithLog(() => adminPost('/admin/scale-down', { cluster }), 'scale-down'), [requestWithLog]);
     const handleScaleUp = useCallback((cluster) => requestWithLog(() => adminPost('/admin/scale-up', { cluster }), 'scale-up'), [requestWithLog]);
     const handleSetLatency = useCallback((cluster, ms) => requestWithLog(() => adminPost('/api/admin/set-latency', { cluster, latency_ms: parseInt(ms) }), 'set-latency'), [requestWithLog]);
+    const handleToggleFailure = useCallback((cluster) => requestWithLog(() => adminPost('/api/admin/toggle-failure', { cluster }), 'toggle-failure'), [requestWithLog]);
     const handleToggleMtls = useCallback((cluster) => requestWithLog(() => adminPost('/api/admin/toggle-mtls', { cluster }), 'toggle-mtls'), [requestWithLog]);
     const handleSetAuthPolicy = useCallback((cluster, allowedUsers) => {
         requestWithLog(
@@ -185,6 +158,13 @@ const DashboardPage = () => {
             allowedUsers.length > 0
                 ? `auth-policy → allow [${allowedUsers.join(', ')}]`
                 : 'auth-policy → removed'
+        );
+    }, [requestWithLog]);
+
+    const handleSetAccessPolicy = useCallback((cluster, policy) => {
+        requestWithLog(
+            () => adminPost('/api/admin/set-access-policy', { cluster, access_policy: policy }),
+            `access-policy → ${policy}`
         );
     }, [requestWithLog]);
 
@@ -197,8 +177,7 @@ const DashboardPage = () => {
         totalDenied += e.stats.denied || 0;
     }
     const activeClusters = clusterEntries.filter(([, c]) => !c.offline && c.info.healthy).length;
-    const cutoff = Date.now() - 5000;
-    const rps = (allRequestsRef.current.filter(r => r.receivedAt > cutoff).length / 5).toFixed(1);
+    const rps = clusterEntries.reduce((sum, [, e]) => sum + (e.stats?.rps || 0), 0).toFixed(1);
 
     return (
         <div className="full-height-container text-white dashboard-page">
@@ -228,8 +207,11 @@ const DashboardPage = () => {
                 </div>
 
                 <div className="row g-3 mb-3">
-                    <div className="col-12 col-lg-8">
+                    <div className="col-12 col-lg-4">
                         <LeaderboardPanel leaderboard={leaderboard} />
+                    </div>
+                    <div className="col-12 col-lg-4">
+                        <PieceHistogram clusters={clusters} />
                     </div>
                     <div className="col-12 col-lg-4">
                         <QRCodeSidebar origin={window.location.origin} />
@@ -244,30 +226,19 @@ const DashboardPage = () => {
                                 onScaleDown={() => handleScaleDown(name)}
                                 onScaleUp={() => handleScaleUp(name)}
                                 onSetLatency={(ms) => handleSetLatency(name, ms)}
+                                onToggleFailure={() => handleToggleFailure(name)}
                                 onToggleMtls={() => handleToggleMtls(name)}
                                 onSetAuthPolicy={(clients) => handleSetAuthPolicy(name, clients)}
+                                onSetAccessPolicy={(policy) => handleSetAccessPolicy(name, policy)}
                             />
                         </div>
                     ))}
                 </div>
 
                 <div className="row g-3 mb-3">
-                    <div className="col-12 col-lg-8">
-                        <TrafficCanvas
-                            clusters={clusters}
-                            particlesRef={particlesRef}
-                            canvasRef={canvasRef}
-                        />
-                    </div>
-                    <div className="col-12 col-lg-4">
-                        <PieceHistogram clusters={clusters} />
-                    </div>
-                </div>
-
-                <div className="row g-3">
                     <div className="col-12">
                         <EventLog eventLog={eventLog} />
-                    </div>
+                    </div>    
                 </div>
 
             </div>

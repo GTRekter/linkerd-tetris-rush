@@ -1,4 +1,5 @@
 import { PIECE_COLORS } from '../constants/pieces';
+import './PieceSidebar.css';
 
 const PieceSidebar = ({ lastPieceMeta, feed }) => (
     <div className="tetris-sidebar-right">

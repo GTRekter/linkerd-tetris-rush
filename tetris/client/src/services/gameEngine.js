@@ -45,7 +45,7 @@ export function lockPiece(piece, board) {
             const ny = piece.y + r;
             if (ny >= 0 && ny < BOARD_H) {
                 b[ny][nx] = {
-                    color: piece.corrupted ? '#1e1e2e' : piece.color,
+                    color: piece.corrupted ? '#000000' : piece.color,
                     clusterColor: piece.clusterColor || '#555',
                     cluster: piece.cluster || '',
                     corrupted: piece.corrupted,
@@ -78,7 +78,7 @@ export function buildPiece(apiData) {
         matrix,
         x: spawnX(matrix),
         y: 0,
-        color: apiData.corrupted ? '#2a2a3e' : PIECE_COLORS[type],
+        color: apiData.corrupted ? '#000000' : PIECE_COLORS[type],
         clusterColor: apiData.cluster_color || '#555',
         cluster: apiData.cluster,
         corrupted: apiData.corrupted,

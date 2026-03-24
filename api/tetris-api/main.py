@@ -22,6 +22,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
+
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -84,6 +86,7 @@ async def _init_redis():
             "auth_deny_rate": "0.35",
             "egress_enabled": "0",
             "artificial_latency_ms": "0",
+            "failure_enabled": "0",
             "healthy": "1",
             "traffic_weights": "{}",
         })
@@ -154,7 +157,9 @@ async def info():
         "interceptor_active": _b(state.get("interceptor_active", "0")),
         "intercepted_count": int(state.get("intercepted_count", 0)),
         "auth_policy_enabled": _b(state.get("auth_policy_enabled", "0")),
+        "access_policy": state.get("access_policy", "allow"),
         "egress_enabled": _b(state.get("egress_enabled", "0")),
+        "multicluster_mode": state.get("multicluster_mode", "federated"),
         "traffic_weights": json.loads(state.get("traffic_weights", "{}")),
         "total_pieces_served": int(stats.get("total_pieces_served", 0)),
         "piece_type_counts": {k: int(v) for k, v in piece_counts.items()},
@@ -205,10 +210,17 @@ async def next_piece(player_id: str, request: Request):
     if latency_ms_setting > 0:
         await asyncio.sleep(latency_ms_setting / 1000.0)
 
+    # Failure injection — return 503 so Linkerd's failure accrual counts
+    # consecutive failures.  After 7 consecutive 5xx responses the proxy
+    # ejects the endpoint and shifts traffic to healthy backends.
+    if _b(state.get("failure_enabled", "0")):
+        raise HTTPException(status_code=503, detail="injected_failure")
+
     # Auth policy denial
     if state.get("active_scenario") == "auth-policy" and _b(state.get("auth_policy_enabled", "0")):
         deny_rate = float(state.get("auth_deny_rate", "0.35"))
         if random.random() < deny_rate:
+            await rdb.hincrby(k("game:stats"), "denied_count", 1)
             raise HTTPException(
                 status_code=403,
                 detail={
@@ -231,7 +243,7 @@ async def next_piece(player_id: str, request: Request):
     corrupted = False
     corrupted_from = piece_type
     if not _b(state.get("mtls_enabled", "1")):
-        if random.random() < 0.6:
+        if random.random() < 0.8:
             corrupted = True
             await rdb.hincrby(k("game:state"), "intercepted_count", 1)
             await rdb.hset(k("game:state"), "interceptor_active", "1")
@@ -362,6 +374,16 @@ async def set_latency(req: Request):
     ms = int(data.get("latency_ms", 0))
     await rdb.hset(k("game:state"), "artificial_latency_ms", str(ms))
     return {"latency_ms": ms}
+
+
+@app.post("/api/admin/toggle-failure")
+async def toggle_failure(req: Request):
+    data = await req.json()
+    _check_token(data)
+    current = _b((await rdb.hget(k("game:state"), "failure_enabled")) or "0")
+    new_val = "0" if current else "1"
+    await rdb.hset(k("game:state"), "failure_enabled", new_val)
+    return {"failure_enabled": new_val == "1"}
 
 
 @app.post("/api/admin/set-scenario")

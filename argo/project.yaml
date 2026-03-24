@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: vastaya
+  namespace: argocd
+spec:
+  description: Tetris Rush — Linkerd multicluster demo
+  sourceRepos:
+    - "https://github.com/kubernetes-sigs/gateway-api"
+    - "https://helm.linkerd.io/edge"
+    - "https://helm.linkerd.io/stable"
+    # Update this to your actual repo URL
+    - "https://github.com/YOUR_ORG/linkerd-tetris-rush.git"
+  destinations:
+    # ap-east cluster
+    - server: "https://vastaya-ap-east:6443"
+      namespace: "*"
+    # ap-central cluster
+    - server: "https://vastaya-ap-central:6443"
+      namespace: "*"
+    # ap-south cluster
+    - server: "https://vastaya-ap-south:6443"
+      namespace: "*"
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"

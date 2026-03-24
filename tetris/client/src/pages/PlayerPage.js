@@ -59,32 +59,40 @@ const PlayerPage = () => {
             onTouchEnd={game.onTouchEnd}
             style={{ touchAction: 'none', userSelect: 'none' }}
         >
-            <div className="tetris-layout">
-                <ScoreSidebar
-                    score={game.score}
-                    lines={game.lines}
-                    level={game.level}
-                    scenario={game.scenario}
-                    mtlsEnabled={game.mtlsEnabled}
-                    authPolicyEnabled={game.authPolicyEnabled}
-                    egressEnabled={game.egressEnabled}
-                    leaderboard={game.leaderboard}
-                    onToggleLeaderboard={game.toggleLeaderboard}
-                />
+            <div className="container-fluid h-100">
+                <div className="row h-100 align-items-center justify-content-center tetris-row">
+                    <div className="col-auto d-none d-md-block tetris-col-sidebar">
+                        <ScoreSidebar
+                            score={game.score}
+                            lines={game.lines}
+                            level={game.level}
+                            scenario={game.scenario}
+                            mtlsEnabled={game.mtlsEnabled}
+                            authPolicyEnabled={game.authPolicyEnabled}
+                            egressEnabled={game.egressEnabled}
+                            leaderboard={game.leaderboard}
+                            onToggleLeaderboard={game.toggleLeaderboard}
+                        />
+                    </div>
 
-                <GameBoard
-                    board={game.board}
-                    currentPiece={game.currentPiece}
-                    boardRef={game.boardRef}
-                    statusMsg={game.statusMsg}
-                    waitingForPiece={game.waitingForPiece}
-                    retryCount={game.retryCount}
-                />
+                    <div className="col-auto d-flex justify-content-center">
+                        <GameBoard
+                            board={game.board}
+                            currentPiece={game.currentPiece}
+                            boardRef={game.boardRef}
+                            statusMsg={game.statusMsg}
+                            waitingForPiece={game.waitingForPiece}
+                            retryCount={game.retryCount}
+                        />
+                    </div>
 
-                <PieceSidebar
-                    lastPieceMeta={game.nextPieceMeta}
-                    feed={game.feed}
-                />
+                    <div className="col-auto d-none d-md-block tetris-col-sidebar">
+                        <PieceSidebar
+                            lastPieceMeta={game.nextPieceMeta}
+                            feed={game.feed}
+                        />
+                    </div>
+                </div>
             </div>
         </div>
     );

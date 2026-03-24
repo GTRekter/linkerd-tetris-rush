@@ -2,10 +2,11 @@ import { useState } from 'react';
 import './ClusterCard.css';
 
 const CLIENT_IDENTITIES = [
+    { id: 'linkerd-gateway', label: 'linkerd-gateway' },
     { id: 'tetris-frontend', label: 'tetris-frontend' },
 ];
 
-const ClusterCard = ({ entry, onSetLatency, onToggleMtls, onSetAuthPolicy, onScaleDown, onScaleUp }) => {
+const ClusterCard = ({ entry, onSetLatency, onToggleFailure, onToggleMtls, onSetAuthPolicy, onSetAccessPolicy, onScaleDown, onScaleUp }) => {
     const [selectedClients, setSelectedClients] = useState([]);
 
     const toggleClient = (id) => {
@@ -89,6 +90,25 @@ const ClusterCard = ({ entry, onSetLatency, onToggleMtls, onSetAuthPolicy, onSca
                 </div>
             )}
 
+            {/* Failure Injection */}
+            {!entry.offline && (
+                <div className="card-section">
+                    <div className="eyebrow mb-1">Failure Injection</div>
+                    <div className="form-check form-switch">
+                        <input
+                            type="checkbox"
+                            className="form-check-input"
+                            checked={!!entry.stats.failure_enabled}
+                            onChange={() => onToggleFailure()}
+                            style={{ accentColor: '#ef4444' }}
+                        />
+                        <label className="form-check-label small text-white-50">
+                            {entry.stats.failure_enabled ? 'Enabled (503)' : 'Disabled'}
+                        </label>
+                    </div>
+                </div>
+            )}
+
             {/* mTLS */}
             {!entry.offline && (
                 <div className="card-section">
@@ -124,7 +144,7 @@ const ClusterCard = ({ entry, onSetLatency, onToggleMtls, onSetAuthPolicy, onSca
                             </button>
                         ))}
                     </div>
-                    <div className="d-flex gap-2">
+                    <div className="d-flex gap-2 flex-wrap">
                         <button
                             className="btn btn-xs btn-outline-info"
                             onClick={applyAuthPolicy}
@@ -140,6 +160,12 @@ const ClusterCard = ({ entry, onSetLatency, onToggleMtls, onSetAuthPolicy, onSca
                                 Remove Policy
                             </button>
                         )}
+                        <button
+                            className={`btn btn-xs ${entry.access_policy === 'deny' ? 'btn-outline-success' : 'btn-outline-danger'}`}
+                            onClick={() => onSetAccessPolicy(entry.access_policy === 'deny' ? 'all-unauthenticated' : 'deny')}
+                        >
+                            {entry.access_policy === 'deny' ? 'Allow All' : 'Deny All'}
+                        </button>
                     </div>
                 </div>
             )}

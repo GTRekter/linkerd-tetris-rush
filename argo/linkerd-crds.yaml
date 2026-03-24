@@ -1,0 +1,40 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: linkerd-crds
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - cluster: vastaya-ap-east
+            server: "https://vastaya-ap-east:6443"
+          - cluster: vastaya-ap-central
+            server: "https://vastaya-ap-central:6443"
+          - cluster: vastaya-ap-south
+            server: "https://vastaya-ap-south:6443"
+  template:
+    metadata:
+      name: "linkerd-crds-{{ .cluster }}"
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      project: vastaya
+      source:
+        repoURL: https://helm.buoyant.cloud
+        chart: linkerd-enterprise-crds
+        targetRevision: "*"
+      destination:
+        server: "{{ .server }}"
+        namespace: linkerd
+      syncPolicy:
+        automated:
+          prune: false
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+          - Replace=true

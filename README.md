@@ -1,216 +1,373 @@
-# Tetris — Linkerd Multicluster Demo
+# Linkerd Tetris Rush
 
-An interactive Tetris game for demonstrating Linkerd multicluster capabilities at conferences and meetups.
+A live demo platform for showcasing Linkerd's multi-cluster service mesh capabilities through an interactive Tetris game. Players join via QR code, play Tetris across a distributed cluster topology, and a presenter dashboard visualizes traffic flows, mesh scenarios, and cluster health in real time.
 
-Attendees scan a QR code, join from their phones, and play Tetris. Every piece is fetched via a real API call routed through Linkerd across Kubernetes clusters. The presenter switches between **5 live modules** — traffic splitting, latency injection, mTLS, authorization policy, and resiliency — each visibly affecting the pieces players receive in real time.
+## Components
 
-## The Core Metaphor
+| Component | Language | Framework | Purpose |
+|-----------|----------|-----------|---------|
+| `tetris-api` | Python | FastAPI | Game backend: piece generation, scoring, leaderboard, Redis state |
+| `tetris-frontend` | JavaScript | Express + React | Player UI: 10x20 game board, controls, piece preview |
+| `dashboard-api` | JavaScript | Express | Admin API: Kubernetes scaling, cluster discovery, scenario toggles |
+| `dashboard-frontend` | JavaScript | Express + React | Presenter UI: traffic visualization, cluster cards, leaderboard |
+| Redis | - | - | Shared cross-cluster state: players, game stats, event logs |
 
-Each Tetris piece = one API request through the mesh.
-
-```
-Player requests next piece
-        │
-        ▼
-   GET /api/next-piece
-        │
-   Linkerd Gateway
-        │
-   ┌────┴────┐────────┐
-   │         │        │
- us-east  eu-west  ap-south
- (blue)   (purple)  (cyan)
-```
-
-The cluster badge on each piece shows which cluster served it. Latency, corruption, denial, and failover all manifest directly in the player's game.
-
-## Modules
-
-| Module | What it demos | What players see |
-|---|---|---|
-| **Traffic Split** | Request distribution across clusters | Piece colors shift as weights change |
-| **Latency** | Latency injection & retries | Pieces stall at the top before spawning |
-| **mTLS** | Mutual TLS & tampered requests | Pieces arrive as wrong shapes (corrupted) |
-| **Auth Policy** | Authorization policies | "DENIED" in piece feed, Linkerd retries |
-| **Resiliency** | Failover & cluster health | Cluster goes red on dashboard, game continues |
-
-## Two Screens
-
-**Player (phone via QR):**
-- Scan → enter name → play Tetris immediately
-- Each piece shows cluster badge and latency
-- Touch controls: tap to rotate, swipe left/right to move, swipe down to hard drop
-- Keyboard: arrow keys + space (desktop)
-
-**Presenter (projected dashboard at `/dashboard`):**
-- Live traffic flow diagram with animated requests
-- Cluster cards with kill/revive, latency slider, and module-specific controls
-- Real-time leaderboard
-- Piece distribution chart (last 60s)
-- Event log with per-cluster color coding
-- QR code for attendees to scan
-
-## Demo Flow (Suggested)
-
-1. Show the QR, have everyone scan and start playing
-2. **Traffic Split** — point out cluster badges on pieces; slide weights to 80% one cluster, watch piece colors shift
-3. **Latency** — inject 800ms on one cluster; players served by it see a visible "Fetching piece..." pause
-4. **mTLS** — disable mTLS; pieces start arriving as wrong shapes. Re-enable to fix instantly
-5. **Auth Policy** — enable AuthPolicy; feed shows "DENIED" requests, Linkerd retries on authorized cluster
-6. **Resiliency** — kill a cluster mid-game; pieces keep flowing (Linkerd failover), then revive and show recovery
-7. Show the leaderboard
+All components are containerized with multi-stage Docker builds and deployed via a single Helm chart.
 
 ## Project Structure
 
 ```
-.
+linkerd-tetris-rush/
 ├── api/
-│   ├── main.py                 # FastAPI backend (piece serving, scoring, WebSockets)
-│   ├── requirements.txt        # Python dependencies
-│   └── Dockerfile              # API container image
+│   ├── tetris-api/          # FastAPI backend (Python 3.12)
+│   └── dashboard-api/       # Express admin API (Node.js)
 ├── tetris/
-│   ├── client/                 # React frontend (player game)
-│   │   └── src/
-│   │       ├── pages/
-│   │       │   ├── PlayerPage.js    # Tetris engine (board, controls, piece fetching)
-│   │       │   └── DashboardPage.js # Presenter dashboard
-│   │       └── components/     # Layout, NavigationBar, Footer
-│   ├── server/                 # Express server (serves React build, proxies API/WS)
-│   └── Dockerfile              # Tetris frontend container image
+│   ├── server/              # Express proxy server
+│   └── client/src/          # React game frontend
 ├── dashboard/
-│   ├── client/                 # React frontend (presenter dashboard)
-│   ├── server/                 # Express server (serves React build, proxies API/WS)
-│   └── Dockerfile              # Dashboard container image
-├── helm/
-│   ├── tetris/                 # Helm chart
-│   │   ├── Chart.yaml
-│   │   ├── values.yaml         # Default values (us-east, ingress + TrafficSplit on)
-│   │   └── templates/          # Namespace, Deployment, Service, Ingress, TrafficSplit
-│   ├── values-us-east.yaml     # Primary cluster overrides
-│   ├── values-eu-west.yaml     # Secondary cluster overrides
-│   └── values-ap-south.yaml    # Secondary cluster overrides
+│   ├── server/              # Express proxy server
+│   └── client/src/          # React dashboard frontend
+├── helm/tetris/             # Helm chart for all components
 ├── scripts/
-│   ├── local-dev.sh            # Local development modes
-│   └── k3d.sh                  # Full k3d multicluster setup
-└── docs/
-    ├── local-development.md    # Local development guide (no Kubernetes)
-    ├── k3d-deployment.md       # k3d + Linkerd multicluster setup guide
-    └── modules.md              # Demo modules — what each showcases about Linkerd
+│   ├── k3d.sh               # Multi-cluster setup automation
+│   └── local-dev.sh         # Local development helper
+└── docs/                    # Architecture and deployment guides
 ```
 
-## Quick Start (Local)
+## Cluster Architecture
 
-```bash
-# Backend only (FastAPI on port 8000)
-./scripts/local-dev.sh
+The project supports multiple Linkerd multi-cluster topologies across three K3d clusters: `ap-south`, `ap-central`, and `ap-east`.
 
-# Backend + React dev server (hot reload on port 3000)
-./scripts/local-dev.sh --ui
+When users scan the Dashboard QR code, they are randomly routed (round-robin) to one of the three Tetris LoadBalancer services (one per cluster). The presenter dashboard in `ap-east` aggregates data from all clusters via Redis and mirrored services.
 
-# Simulate 3 clusters locally (ports 8001, 8002, 8003)
-./scripts/local-dev.sh --multi
+## Demo Scenarios
 
-# Docker build and run
-./scripts/local-dev.sh --docker
+The following scenarios can be toggled per-cluster from the presenter dashboard:
+
+### Disable mTLS
+
+Can be enabled selectively on each cluster. When mTLS is disabled on a cluster:
+- The `tetris-api` and `tetris-frontend` deployment specs in that cluster receive the `linkerd.io/inject: disabled` annotation, removing the Linkerd sidecar proxy.
+- 80% of pieces served to players on that cluster appear corrupted (rendered in black), visually demonstrating the loss of encryption.
+- All requests are routed locally within the cluster only — federated/mirrored services become unreachable since the workload is no longer part of the mesh.
+
+### Deny All (Server Resource)
+
+Can be enabled selectively on each cluster. 
+When applied:
+- A Linkerd `Server` resource is deployed targeting the `tetris-frontend` pods. As result only clients that have been explicitly authorized may access the `tetris-api`. 
+- All unauthorized requests routed to the `tetris-api` on that cluster receive a 403 denial, which the game UI surfaces as a blocked-request indicator.
+When disabled:
+- A Linkerd `Server` resource targeting the `tetris-frontend` pods is deleted.
+- All unauthorized requests routed to the `tetris-api` on that cluster start working as expected.
+
+### Deny All with Authorization Policy
+
+Can be enabled selectively on each cluster. From the dashboard, the presenter can select which clients to authorize (e.g., `linkerd-gateway`, `tetris-frontend`). 
+When applied:
+- A Linkerd `AuthorizationPolicy` and `MeshTLSAuthentication` resource are deployed.
+- Only traffic matching the specified client identities is permitted; 35% of other requests are denied with a 403.
+When disabled:
+- A Linkerd `AuthorizationPolicy` and `MeshTLSAuthentication` resource are deleted.
+- **Gateway:** The `linkerd-gateway` identity is the only relevant identity, where cross-cluster traffic is tunneled through the multicluster gateway.
+- **Remote-Discovery/Federated:** Cross-cluster traffic goes directly pod-to-pod, the identity presented need to be `tetris-frontend`.
+
+### Latency Injection
+
+Can be enabled selectively on each cluster via a slider (0–3000ms). When enabled:
+- The `tetris-api` injects artificial sleep per request, up to the configured milliseconds.
+- Players see a `"Fetching piece..."` spinner and a latency badge on each piece showing the response time.
+- **Gateway/Remote-Discovery:** The latency keeps affecting the endpoints as they are blindly routed there. `RandomAvailableSelection` has no awareness of latency — each backend gets picked with equal probability regardless of how slow it is.
+- **Federated:** The selection of the endpoints is based on P2C + PeakEwma. If an endpoint is slow, PeakEwma records the higher RTT and P2C deprioritizes it, routing most requests to faster endpoints. Traffic is not completely cut off — P2C still occasionally picks the slower endpoint, but the majority shifts to healthy ones.
+
+### Kill (No Endpoints)
+When you click `Kill` or `Revive`, it scales the tetris-api deployment down to 0 or up to 1 replicas. The killed services referenced in the `HTTPRoute` will be processed by the proxy. Because they have no endpoints, it zeros out the weight for that backend and tries the next one.
+
+### Failure Rate (Status Code 503)
+It will return 503 to all requests to the `tetris-api`.
+
+- **Gateway/Remote-Discovery:** `HTTPRoute` splits traffic across 3 backends with equal weight. RandomAvailableSelection randomly picks a backend. If it picks an endpoint of a service with failure injection enabled, it returns 503, then the `tetris-frontend` retries. Circuit-breaking one gateway IP takes out the entire cluster's traffic for that backend, as it applies to the gateway.
+- **Federated:** All endpoints from all clusters are unioned into a single P2C balancer pool. If P2C picks an endpoint with failure injection enabled, it returns 503, then the `tetris-frontend` retries. Circuit-breaking is per-pod, so only the specific failing pods get ejected while healthy pods in the same cluster continue serving. By default, the proxy is not aware of 503 status codes in responses. However, failure accrual can be configured with:
+
+```
+kubectl annotate svc tetris-api-federated -n vastaya \
+  balancer.linkerd.io/failure-accrual=consecutive \
+  balancer.linkerd.io/failure-accrual-consecutive-max-failures="1" \
+  balancer.linkerd.io/failure-accrual-consecutive-min-penalty="1m" \
+  balancer.linkerd.io/failure-accrual-consecutive-max-penalty="1m" \
+  balancer.linkerd.io/failure-accrual-consecutive-jitter-ratio="0.5" \
+  --overwrite
 ```
 
-Open `/play` on your phone (or browser) and `/dashboard` on the projector.
+or removed via:
 
-## Kubernetes with Linkerd Multicluster
-
-```bash
-export CTX_EAST=your-east-context
-export CTX_WEST=your-west-context
-export CTX_SOUTH=your-south-context
-export REGISTRY=your-registry.com/username
-./scripts/k3d.sh
+```
+kubectl annotate svc tetris-api-federated -n vastaya \
+  balancer.linkerd.io/failure-accrual- \
+  balancer.linkerd.io/failure-accrual-consecutive-max-failures- \
+  balancer.linkerd.io/failure-accrual-consecutive-min-penalty- \
+  balancer.linkerd.io/failure-accrual-consecutive-max-penalty- \
+  balancer.linkerd.io/failure-accrual-consecutive-jitter-ratio-
 ```
 
-For step-by-step details see [docs/k3d-deployment.md](docs/k3d-deployment.md).
+**Note:**  Even with failure accrual enabled, occasional 503s will still reach the frontend. These are probe requests — after the penalty period expires, the breaker reopens and sends a test request to check if the endpoint has recovered. If it still fails, the 503 leaks to the client before the breaker trips again. Increasing min-penalty reduces their frequency but cannot eliminate them entirely. A retry policy would be needed to fully hide probe failures from the client.
 
-## Architecture
+## Multi-Cluster Topology Modes
 
-Each cluster runs the same container: **Python FastAPI** (game logic, WebSocket) behind a **Node Express** server (serves React, proxies `/api/*` and `/ws/*`). Linkerd multicluster mirrors the service across all clusters; the `TrafficSplit` resource controls weight distribution.
+The topology mode can be switched live from the dashboard using a dropdown.
 
-The presenter dashboard connects directly to each cluster's WebSocket and aggregates events, leaderboard, and cluster metadata in one view.
+### Federated to Mirrored
 
-## Configuration
+- Changes the `tetris-api` service annotation in all clusters from `mirror.linkerd.io/federated=member` to `mirror.linkerd.io/exported=remote-discovery`. 
+- An `HTTPRoute` is deployed in each cluster with `parentRef: tetris-api` and backends splitting traffic equally (33%) across the local `tetris-api` and the remote mirrored services (`tetris-api-vastaya-ap-*`). 
+- The `tetris-frontend` targets the `tetris-api` service directly instead of `tetris-api-federated`.
 
-| Env Variable | Description | Default |
-|---|---|---|
-| `CLUSTER_NAME` | Name shown on piece badges | `local-dev` |
-| `CLUSTER_COLOR` | Hex color for this cluster | `#3b82f6` |
-| `CLUSTER_REGION` | Region label | `localhost` |
-| `EXTERNAL_URL` | Public URL for QR code | `http://localhost:8000` |
-| `ADMIN_TOKEN` | Token for presenter controls | `demo-admin-2024` |
+### Mirrored to Gateway
 
-## API Reference
+- Changes the `tetris-api` service annotation in all clusters from `mirror.linkerd.io/exported=remote-discovery` to `mirror.linkerd.io/exported=true`. 
+- The existing `HTTPRoute` configuration remains unchanged — the `tetris-frontend` continues targeting the `tetris-api` service.
 
-| Path | Method | Description |
-|---|---|---|
-| `/api/health` | GET | Health check (503 when killed) |
-| `/api/info` | GET | Cluster metadata + module state |
-| `/api/join` | POST | Join game with name |
-| `/api/next-piece` | GET | Fetch next Tetris piece (the mesh call) |
-| `/api/score` | POST | Submit lines cleared + level |
-| `/api/leaderboard` | GET | Top scores |
-| `/api/qr` | GET | QR code SVG pointing to `/play` |
-| `/api/admin/toggle-health` | POST | Kill / revive cluster |
-| `/api/admin/set-latency` | POST | Inject latency (0–3000ms) |
-| `/api/admin/set-scenario` | POST | Switch active module |
-| `/api/admin/toggle-mtls` | POST | Toggle mTLS + interceptor |
-| `/api/admin/toggle-auth-policy` | POST | Toggle authorization policy |
-| `/api/admin/toggle-egress` | POST | Toggle egress (bonus pieces) |
-| `/api/admin/set-weights` | POST | Set traffic split weights |
-| `/api/admin/reset` | POST | Reset all game state |
-| `/ws/player` | WebSocket | Real-time player events |
-| `/ws/dashboard` | WebSocket | Real-time dashboard feed |
+### Mirrored/Gateway to Federated
 
-## Linkerd Features Demonstrated
+- Changes the `tetris-api` service annotation in all clusters from `mirror.linkerd.io/exported=remote-discovery` or `mirror.linkerd.io/exported=true` back to `mirror.linkerd.io/federated=member`. 
+- The `HTTPRoute` resources are deleted, and the `tetris-frontend` change to targeting the `tetris-api-federated` service.
 
-- **Service Mirroring** — label `mirror.linkerd.io/exported: "true"` makes the service visible to linked clusters
-- **Traffic Splitting** — `TrafficSplit` resource distributes piece requests across local and mirrored services
-- **Automatic mTLS** — all piece requests encrypted by default; disable to show interception (pieces arrive corrupted)
-- **Authorization Policies** — restrict which clusters can serve piece requests; unauthorized clusters return 403
-- **Failover & Resiliency** — kill a cluster; Linkerd reroutes piece requests to healthy clusters with no game interruption
-- **Observability** — every piece request reports cluster, latency, mTLS status, and denial metadata
+## Endpoints
+
+After deployment, the following endpoints are available:
+
+| Endpoint | URL | Description |
+|----------|-----|-------------|
+| Player (ap-east) | `http://ap-east.localhost:8080` | Tetris game |
+| Player (ap-central) | `http://ap-central.localhost:8081` | Tetris game |
+| Player (ap-south) | `http://ap-south.localhost:8082` | Tetris game |
+| Presenter Dashboard | `http://ap-east.localhost:9090` | Admin dashboard |
+
+## Debug
+
+kubectl get pods,svc,httproute,server -n vastaya --context k3d-vastaya-ap-east 
+kubectl get pods,svc,httproute,server -n vastaya --context k3d-vastaya-ap-central 
+kubectl get pods,svc,httproute,server -n vastaya --context k3d-vastaya-ap-south 
+
+## Setup
+
+Refer to the detailed guides in `docs/`:
+- [Architecture](docs/architecture.md) — System design, request flows, and Redis data model
+- [K3d Deployment](docs/k3d-deployment.md) — Full k3d + Linkerd installation steps
+- [Local Development](docs/local-development.md) — Setup and debugging
+- [Demo Modules](docs/modules.md) — Detailed scenario descriptions
+
+### Federated Mode
+
+In federated mode, each cluster exposes a `tetris-api-federated` ClusterIP service that aggregates traffic across local `tetris-api` instances. The `dashboard-api` services in `ap-south` and `ap-central` connect to Redis in `ap-east` via a cross-cluster LoadBalancer. The dashboard frontend in `ap-east` reaches remote `dashboard-api` instances through mirrored services.
 
 
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                             k3d-vastaya-ap-south                                │
+│                                                                                 │
+│  ┌─────────────────────────┐                                                    │
+│  │  tetris-frontend        │                                                    │
+│  │  ┌───────────────────┐  │                                                    │
+│  │  │  linkerd-proxy    │  │◄──── Tetris (LoadBalancer)                         │
+│  │  └───────────────────┘  │                                                    │
+│  └─────────────────────────┘                                                    │
+│                                                                                 │
+│  ┌─────────────────────────┐        ┌─────────────────────────┐                 │
+│  │  tetris-api             │        │  dashboard-api          │                 │
+│  │  ┌───────────────────┐  │        │  ┌───────────────────┐  │                 │
+│  │  │  linkerd-proxy    │  │        │  │  linkerd-proxy    │  │                 │
+│  │  └───────────────────┘  │        │  └───────────────────┘  │                 │
+│  └────────────┬────────────┘        └────────────┬────────────┘                 │
+│               │                                  │                              │
+│  ┌────────────▼────────────┐        ┌────────────▼────────────┐                 │
+│  │  tetris-api (ClusterIP) │        │  dashboard-api          │                 │
+│  └────────────┬────────────┘        │  (ClusterIP)            │◄── cross-cluster│
+│  ┌────────────▼────────────┐        └─────────────────────────┘     from east   │
+│  │  tetris-api-federated   │                     │                              │
+│  │  (ClusterIP)            │                     ▼                              │
+│  └─────────────────────────┘          Redis (LoadBalancer) ──► ap-east          │
+│                                                                                 │
+│               Kubernetes API ◄── dashboard-api                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
 
-The Demo Arc (what the presenter walks through)
-"Everyone scan the QR, start playing"
-→ Dashboard lights up with incoming requests, cluster badges appear on pieces
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                            k3d-vastaya-ap-central                               │
+│                                                                                 │
+│  ┌─────────────────────────┐                                                    │
+│  │  tetris-frontend        │                                                    │
+│  │  ┌───────────────────┐  │                                                    │
+│  │  │  linkerd-proxy    │  │◄──── Tetris (LoadBalancer)                         │
+│  │  └───────────────────┘  │                                                    │
+│  └─────────────────────────┘                                                    │
+│                                                                                 │
+│  ┌─────────────────────────┐        ┌─────────────────────────┐                 │
+│  │  tetris-api             │        │  dashboard-api          │                 │
+│  │  ┌───────────────────┐  │        │  ┌───────────────────┐  │                 │
+│  │  │  linkerd-proxy    │  │        │  │  linkerd-proxy    │  │                 │
+│  │  └───────────────────┘  │        │  └───────────────────┘  │                 │
+│  └────────────┬────────────┘        └────────────┬────────────┘                 │
+│               │                                  │                              │
+│  ┌────────────▼────────────┐        ┌────────────▼────────────┐                 │
+│  │  tetris-api (ClusterIP) │        │  dashboard-api          │                 │
+│  └────────────┬────────────┘        │  (ClusterIP)            │◄── cross-cluster│
+│  ┌────────────▼────────────┐        └─────────────────────────┘     from east   │
+│  │  tetris-api-federated   │                     │                              │
+│  │  (ClusterIP)            │                     ▼                              │
+│  └─────────────────────────┘          Redis (LoadBalancer) ──► ap-east          │
+│                                                                                 │
+│               Kubernetes API ◄── dashboard-api                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
 
-Module 1 — Traffic Split
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                             k3d-vastaya-ap-east                                 │
+│                                                                                 │
+│  ┌─────────────────────────┐        ┌─────────────────────────┐  ┌───────────┐  │
+│  │  tetris-frontend        │        │  dashboard              │  │  Redis    │  │
+│  │  ┌───────────────────┐  │        │  ┌───────────────────┐  │  │           │  │
+│  │  │  linkerd-proxy    │  │        │  │  linkerd-proxy    │  │  └─────┬─────┘  │
+│  │  └───────────────────┘  │        │  └───────────────────┘  │        │        │
+│  └─────────────────────────┘        └────────────┬────────────┘        │        │
+│           ▲                                      │                     │        │
+│           │                         ┌────────────┼─────────────────────┘        │
+│   Tetris (LoadBalancer)             │            │                              │
+│                          ┌──────────▼─────────────────────────────┐             │
+│                          │  dashboard-api-vastaya-ap-central      │             │
+│                          │  (ClusterIP)                           │             │
+│                          ├────────────────────────────────────────┤             │
+│                          │  dashboard-api-vastaya-ap-south        │             │
+│                          │  (ClusterIP)                           │             │
+│                          └────────────────────────────────────────┘             │
+│                                                                                 │
+│  ┌─────────────────────────┐        ┌─────────────────────────┐                 │
+│  │  tetris-api             │        │  dashboard-api          │                 │
+│  │  ┌───────────────────┐  │        │  ┌───────────────────┐  │                 │
+│  │  │  linkerd-proxy    │  │        │  │  linkerd-proxy    │  │                 │
+│  │  └───────────────────┘  │        │  └───────────────────┘  │                 │
+│  └────────────┬────────────┘        └────────────┬────────────┘                 │
+│               │                                  │                              │
+│  ┌────────────▼────────────┐        ┌────────────▼────────────┐                 │
+│  │  tetris-api (ClusterIP) │        │  dashboard-api          │                 │
+│  └────────────┬────────────┘        │  (ClusterIP)            │                 │
+│  ┌────────────▼────────────┐        └─────────────────────────┘                 │
+│  │  tetris-api-federated   │                                                    │
+│  │  (ClusterIP)            │       Redis (LoadBalancer) ◄── ap-south, ap-central│
+│  └─────────────────────────┘                                                    │
+│                                                                                 │
+│               Kubernetes API ◄── dashboard-api                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
 
-"Right now all 3 clusters are serving pieces equally. Watch what happens when I shift traffic..."
-→ Slides weight to 80% us-east → players suddenly get mostly blue pieces
+### Mirrored / Gateway Mode
 
-Module 2 — Latency
+In mirrored/gateway mode, remote cluster services are mirrored locally as `tetris-api-vastaya-ap-{region}` ClusterIP services. An `HttpRoute` resource in each cluster controls traffic routing and splitting across local and mirrored `tetris-api` services. The dashboard and Redis topology remains the same as federated mode.
 
-"Let me inject 800ms latency on eu-west..."
-→ Players assigned to eu-west see a visible pause before their next piece spawns. Dashboard shows latency spike. Linkerd retries kick in.
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                             k3d-vastaya-ap-south                                │
+│                                                                                 │
+│  ┌─────────────────────────┐                                                    │
+│  │  tetris-frontend        │                                                    │
+│  │  ┌───────────────────┐  │                                                    │
+│  │  │  linkerd-proxy    │  │◄──── Tetris (LoadBalancer)                         │
+│  │  └───────────────────┘  │                                                    │
+│  └─────────────────────────┘                                                    │
+│                                                                                 │
+│  ┌──────────────────┐                                                           │
+│  │  HttpRoute       │──┬──► tetris-api (ClusterIP)                             │
+│  └──────────────────┘  │                                                        │
+│                        ├──► tetris-api-vastaya-ap-central (ClusterIP)           │
+│                        └──► tetris-api-vastaya-ap-east (ClusterIP)              │
+│                                                                                 │
+│  ┌─────────────────────────┐        ┌─────────────────────────┐                 │
+│  │  tetris-api             │        │  dashboard-api          │                 │
+│  │  ┌───────────────────┐  │        │  ┌───────────────────┐  │                 │
+│  │  │  linkerd-proxy    │  │        │  │  linkerd-proxy    │  │                 │
+│  │  └───────────────────┘  │        │  └───────────────────┘  │                 │
+│  └─────────────────────────┘        └────────────┬────────────┘                 │
+│                                     ┌────────────▼────────────┐                 │
+│                                     │  dashboard-api          │                 │
+│                                     │  (ClusterIP)            │◄── cross-cluster│
+│                                     └─────────────────────────┘     from east   │
+│                                                  │                              │
+│                                                  ▼                              │
+│                                       Redis (LoadBalancer) ──► ap-east          │
+│                                                                                 │
+│               Kubernetes API ◄── dashboard-api                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
 
-Module 3 — Failover / Resiliency
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                            k3d-vastaya-ap-central                               │
+│                                                                                 │
+│  ┌─────────────────────────┐                                                    │
+│  │  tetris-frontend        │                                                    │
+│  │  ┌───────────────────┐  │                                                    │
+│  │  │  linkerd-proxy    │  │◄──── Tetris (LoadBalancer)                         │
+│  │  └───────────────────┘  │                                                    │
+│  └─────────────────────────┘                                                    │
+│                                                                                 │
+│  ┌──────────────────┐                                                           │
+│  │  HttpRoute       │──┬──► tetris-api (ClusterIP)                              │
+│  └──────────────────┘  │                                                        │
+│                        ├──► tetris-api-vastaya-ap-south (ClusterIP)             │
+│                        └──► tetris-api-vastaya-ap-east (ClusterIP)              │
+│                                                                                 │
+│  ┌─────────────────────────┐        ┌─────────────────────────┐                 │
+│  │  tetris-api             │        │  dashboard-api          │                 │
+│  │  ┌───────────────────┐  │        │  ┌───────────────────┐  │                 │
+│  │  │  linkerd-proxy    │  │        │  │  linkerd-proxy    │  │                 │
+│  │  └───────────────────┘  │        │  └───────────────────┘  │                 │
+│  └─────────────────────────┘        └────────────┬────────────┘                 │
+│                                     ┌────────────▼────────────┐                 │
+│                                     │  dashboard-api          │                 │
+│                                     │  (ClusterIP)            │◄── cross-cluster│
+│                                     └─────────────────────────┘     from east   │
+│                                                  │                              │
+│                                                  ▼                              │
+│                                       Redis (LoadBalancer) ──► ap-east          │
+│                                                                                 │
+│               Kubernetes API ◄── dashboard-api                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
 
-"What if a cluster goes down mid-game?"
-→ Kill eu-west → dashboard shows it go red → Linkerd reroutes → no player's game is interrupted
-
-Module 4 — mTLS
-
-"Without mTLS, someone on the network can intercept and tamper with requests"
-→ Toggle mTLS off on one cluster → pieces from that cluster arrive scrambled/wrong shape
-→ Toggle back on → pieces normalize instantly
-
-Module 5 — Auth Policy
-
-"Now let's lock down who can send pieces to certain players"
-→ Restrict ap-south from serving pieces to a group of players → those requests get rejected, pieces stop coming from that cluster
-
-Key Design Decisions
-Question	Answer
-Is Tetris multiplayer?	Each player has their own board — independent games, shared leaderboard
-What triggers a mesh call?	Every piece request — GET /api/next-piece?player_id=...
-How do players see the Linkerd effect?	Visual state on the piece (cluster badge, scrambled, delayed spawn)
-Does the phone show metrics?	Minimal — just the cluster badge and maybe latency on the last piece
-Is the presenter dashboard playable?	No — it's a control + visualization panel only
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                             k3d-vastaya-ap-east                                 │
+│                                                                                 │
+│  ┌─────────────────────────┐        ┌─────────────────────────┐  ┌───────────┐  │
+│  │  tetris-frontend        │        │  dashboard              │  │  Redis    │  │
+│  │  ┌───────────────────┐  │        │  ┌───────────────────┐  │  │           │  │
+│  │  │  linkerd-proxy    │  │        │  │  linkerd-proxy    │  │  └─────┬─────┘  │
+│  │  └───────────────────┘  │        │  └───────────────────┘  │        │        │
+│  └─────────────────────────┘        └────────────┬────────────┘        │        │
+│           ▲                                      │                     │        │
+│           │                         ┌────────────┼─────────────────────┘        │
+│   Tetris (LoadBalancer)             │            │                              │
+│                          ┌──────────▼─────────────────────────────┐             │
+│                          │  dashboard-api-vastaya-ap-central      │             │
+│                          │  (ClusterIP)                           │             │
+│                          ├────────────────────────────────────────┤             │
+│                          │  dashboard-api-vastaya-ap-south        │             │
+│                          │  (ClusterIP)                           │             │
+│                          └────────────────────────────────────────┘             │
+│                                                                                 │
+│  ┌──────────────────┐                                                           │
+│  │  HttpRoute       │──┬──► tetris-api (ClusterIP)                              │
+│  └──────────────────┘  │                                                        │
+│                        ├──► tetris-api-vastaya-ap-central (ClusterIP)           │
+│                        └──► tetris-api-vastaya-ap-south (ClusterIP)             │
+│                                                                                 │
+│  ┌─────────────────────────┐        ┌─────────────────────────┐                 │
+│  │  tetris-api             │        │  dashboard-api          │                 │
+│  │  ┌───────────────────┐  │        │  ┌───────────────────┐  │                 │
+│  │  │  linkerd-proxy    │  │        │  │  linkerd-proxy    │  │                 │
+│  │  └───────────────────┘  │        │  └───────────────────┘  │                 │
+│  └─────────────────────────┘        └────────────┬────────────┘                 │
+│                                     ┌────────────▼────────────┐                 │
+│                                     │  dashboard-api          │                 │
+│                                     │  (ClusterIP)            │                 │
+│                                     └─────────────────────────┘                 │
+│                                                                                 │
+│                                    Redis (LoadBalancer) ◄── ap-south, ap-central│
+│                                                                                 │
+│               Kubernetes API ◄── dashboard-api                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```

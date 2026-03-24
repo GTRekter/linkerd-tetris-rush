@@ -1,0 +1,163 @@
+# Tetris Rush application — one Application per cluster with cluster-specific
+# values matching the Helm overrides from k3d.sh.
+#
+# Update repoURL and targetRevision to match your Git repository.
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tetris-vastaya-ap-east
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: vastaya
+  source:
+    # Update this to your actual repo URL
+    repoURL: "https://github.com/YOUR_ORG/linkerd-tetris-rush.git"
+    targetRevision: main
+    path: helm/tetris
+    helm:
+      valuesObject:
+        dashboard:
+          enabled: true
+        redis:
+          deploy: true
+          url: "redis://redis.vastaya.svc.cluster.local:6379"
+        dashboardFrontend:
+          image:
+            repository: dashboard
+            tag: local
+        dashboardApi:
+          image:
+            repository: dashboard-api
+            tag: local
+        tetrisFrontend:
+          image:
+            repository: tetris
+            tag: local
+        tetrisApi:
+          image:
+            repository: tetris-api
+            tag: local
+        cluster:
+          name: vastaya-ap-east
+          region: vastaya-ap-east
+          color: "#3b82f6"
+        externalUrl: "http://vastaya-ap-east.localhost:8080"
+  destination:
+    server: "https://vastaya-ap-east:6443"
+    namespace: vastaya
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tetris-vastaya-ap-central
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: vastaya
+  source:
+    # Update this to your actual repo URL
+    repoURL: "https://github.com/YOUR_ORG/linkerd-tetris-rush.git"
+    targetRevision: main
+    path: helm/tetris
+    helm:
+      valuesObject:
+        dashboard:
+          enabled: false
+        redis:
+          deploy: false
+          url: "redis://redis-vastaya-ap-east.vastaya.svc.cluster.local:6379"
+        dashboardFrontend:
+          image:
+            repository: dashboard
+            tag: local
+        dashboardApi:
+          image:
+            repository: dashboard-api
+            tag: local
+        tetrisFrontend:
+          image:
+            repository: tetris
+            tag: local
+        tetrisApi:
+          image:
+            repository: tetris-api
+            tag: local
+        cluster:
+          name: vastaya-ap-central
+          region: vastaya-ap-central
+          color: "#8b5cf6"
+        externalUrl: "http://vastaya-ap-central.localhost:8081"
+  destination:
+    server: "https://vastaya-ap-central:6443"
+    namespace: vastaya
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tetris-vastaya-ap-south
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: vastaya
+  source:
+    # Update this to your actual repo URL
+    repoURL: "https://github.com/YOUR_ORG/linkerd-tetris-rush.git"
+    targetRevision: main
+    path: helm/tetris
+    helm:
+      valuesObject:
+        dashboard:
+          enabled: false
+        redis:
+          deploy: false
+          url: "redis://redis-vastaya-ap-east.vastaya.svc.cluster.local:6379"
+        dashboardFrontend:
+          image:
+            repository: dashboard
+            tag: local
+        dashboardApi:
+          image:
+            repository: dashboard-api
+            tag: local
+        tetrisFrontend:
+          image:
+            repository: tetris
+            tag: local
+        tetrisApi:
+          image:
+            repository: tetris-api
+            tag: local
+        cluster:
+          name: vastaya-ap-south
+          region: vastaya-ap-south
+          color: "#06b6d4"
+        externalUrl: "http://vastaya-ap-south.localhost:8082"
+  destination:
+    server: "https://vastaya-ap-south:6443"
+    namespace: vastaya
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

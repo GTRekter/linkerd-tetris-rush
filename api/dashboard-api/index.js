@@ -18,9 +18,6 @@ const CLUSTER_NAME = process.env.CLUSTER_NAME || 'local-dev';
 const DASHBOARD_URL = process.env.DASHBOARD_URL || 'http://localhost:8001';
 const SERVICE_PORT = parseInt(process.env.SERVICE_PORT || '80');
 const HTTPROUTE_NAME = process.env.HTTPROUTE_NAME || 'tetris-api';
-const MULTICLUSTER_BACKENDS = (process.env.MULTICLUSTER_BACKENDS || '')
-  .split(',').map(s => s.trim()).filter(Boolean);
-
 const redis = new Redis(REDIS_URL);
 
 // ---------------------------------------------------------------------------
@@ -116,14 +113,13 @@ function k8sScalePatch(replicas) {
 /** Label map for each multicluster mode. */
 const MODE_LABELS = {
   federated: { 'mirror.linkerd.io/federated': 'member' },
-  mirrored:  { 'mirror.linkerd.io/remote-discovery': 'member' },
+  mirrored:  { 'mirror.linkerd.io/exported': 'remote-discovery' },
   gateway:   { 'mirror.linkerd.io/exported': 'true' },
 };
 
 /** All label keys across modes — used to clear stale labels. */
 const ALL_MODE_LABEL_KEYS = [
   'mirror.linkerd.io/federated',
-  'mirror.linkerd.io/remote-discovery',
   'mirror.linkerd.io/exported',
 ];
 
@@ -196,31 +192,66 @@ async function patchServiceMode(mode) {
 }
 
 /**
- * Build the HTTPRoute backendRefs array for the given mode.
+ * Build the HTTPRoute backendRefs array for mirrored/gateway modes.
+ * Discovers remote clusters from Redis and derives mirrored service names
+ * (tetris-api-{cluster}) dynamically.
  */
-function buildBackendRefs(mode) {
-  if (mode === 'federated') {
-    return [{ name: 'tetris-api-federated', port: SERVICE_PORT, weight: 1 }];
-  }
-  // mirrored & gateway: local + all mirrored backends, equal weight
+async function buildBackendRefs() {
   const refs = [{ name: 'tetris-api', port: SERVICE_PORT, weight: 1 }];
-  for (const backend of MULTICLUSTER_BACKENDS) {
-    refs.push({ name: backend, port: SERVICE_PORT, weight: 1 });
+  const names = await clusterNames();
+  for (const name of names) {
+    if (name === CLUSTER_NAME) continue;
+    refs.push({ name: `tetris-api-${name}`, port: SERVICE_PORT, weight: 1 });
   }
   return refs;
 }
 
 /**
- * Patch the HTTPRoute to use the backendRefs for the given mode.
+ * Create or patch the HTTPRoute for mirrored/gateway modes.
+ * Deploys an HTTPRoute with parentRef: tetris-api and backends splitting
+ * traffic equally across local and mirrored services.
  */
-async function patchHTTPRoute(mode) {
+async function createOrPatchHTTPRoute() {
   const creds = k8sCreds();
-  const backendRefs = buildBackendRefs(mode);
+  const backendRefs = await buildBackendRefs();
+  const route = {
+    apiVersion: 'gateway.networking.k8s.io/v1',
+    kind: 'HTTPRoute',
+    metadata: {
+      name: HTTPROUTE_NAME,
+      namespace: creds.namespace,
+    },
+    spec: {
+      parentRefs: [{ group: '', kind: 'Service', name: 'tetris-api', port: SERVICE_PORT }],
+      rules: [{ backendRefs }],
+    },
+  };
 
-  return k8sRequest('PATCH',
-    `/apis/gateway.networking.k8s.io/v1/namespaces/${creds.namespace}/httproutes/${HTTPROUTE_NAME}`,
-    { spec: { rules: [{ backendRefs }] } }
-  );
+  try {
+    return await k8sRequest('POST',
+      `/apis/gateway.networking.k8s.io/v1/namespaces/${creds.namespace}/httproutes`,
+      route
+    );
+  } catch {
+    return await k8sRequest('PATCH',
+      `/apis/gateway.networking.k8s.io/v1/namespaces/${creds.namespace}/httproutes/${HTTPROUTE_NAME}`,
+      { spec: { rules: [{ backendRefs }] } }
+    );
+  }
+}
+
+/**
+ * Delete the HTTPRoute when switching back to federated mode.
+ */
+async function deleteHTTPRoute() {
+  const creds = k8sCreds();
+  try {
+    return await k8sRequest('DELETE',
+      `/apis/gateway.networking.k8s.io/v1/namespaces/${creds.namespace}/httproutes/${HTTPROUTE_NAME}`
+    );
+  } catch {
+    // ignore if not found
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -386,6 +417,7 @@ app.get('/api/clusters/:name/info', async (req, res) => {
       intercepted_count: parseInt(state.intercepted_count || '0'),
       auth_policy_enabled: b(state.auth_policy_enabled || '0'),
       egress_enabled: b(state.egress_enabled || '0'),
+      access_policy: state.access_policy || 'all-unauthenticated',
       multicluster_mode: state.multicluster_mode || 'federated',
       traffic_weights: JSON.parse(state.traffic_weights || '{}'),
     });
@@ -413,10 +445,23 @@ app.get('/api/clusters/:name/pieces', async (req, res) => {
     ]);
     res.json({
       total_pieces_served: parseInt(stats.total_pieces_served || '0'),
+      denied_count: parseInt(stats.denied_count || '0'),
       piece_type_counts: Object.fromEntries(
         Object.entries(pieceCounts || {}).map(([key, v]) => [key, parseInt(v)])
       ),
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Internal endpoint for tetris-frontend to report Linkerd-level denials
+// (when the proxy blocks the request before it reaches tetris-api).
+app.post('/api/internal/report-denied', async (req, res) => {
+  try {
+    const cluster = req.body.cluster || CLUSTER_NAME;
+    await redis.hincrby(k(cluster, 'game:stats'), 'denied_count', 1);
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -453,6 +498,7 @@ app.get('/api/clusters/:name/latency', async (req, res) => {
     const state = await redis.hgetall(k(name, 'game:state'));
     res.json({
       artificial_latency_ms: parseInt(state.artificial_latency_ms || '0'),
+      failure_enabled: state.failure_enabled === '1',
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -500,10 +546,10 @@ app.get('/go', async (_req, res) => {
       return res.status(503).send('No clusters available');
     }
 
-    // Atomic counter for round-robin assignment
-    const counter = await redis.incr(gk('redirect:counter'));
-    const idx = (counter - 1) % names.length;
-    const chosen = names.sort()[idx]; // sort for deterministic ordering
+    // Random assignment across clusters
+    const sorted = names.sort();
+    const idx = Math.floor(Math.random() * sorted.length);
+    const chosen = sorted[idx];
 
     const cluster = await redis.hgetall(k(chosen, 'game:cluster'));
     const targetUrl = `${cluster.external_url || DASHBOARD_URL}/play`;
@@ -544,6 +590,20 @@ app.post('/api/admin/set-latency', async (req, res) => {
   }
 });
 
+app.post('/api/admin/toggle-failure', async (req, res) => {
+  try {
+    checkToken(req.body);
+    const c = targetCluster(req.body);
+    const current = (await redis.hget(k(c, 'game:state'), 'failure_enabled')) === '1';
+    const newVal = current ? '0' : '1';
+    await redis.hset(k(c, 'game:state'), 'failure_enabled', newVal);
+    await pushLog(c, `Failure injection ${newVal === '1' ? 'enabled' : 'disabled'}`);
+    res.json({ failure_enabled: newVal === '1' });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
 app.post('/api/admin/set-scenario', async (req, res) => {
   try {
     checkToken(req.body);
@@ -564,20 +624,36 @@ app.post('/api/admin/set-mode', async (req, res) => {
     if (!MODE_LABELS[mode]) {
       return res.status(400).json({ error: `invalid mode: ${mode}. Must be federated, mirrored, or gateway` });
     }
-    const c = targetCluster(req.body);
-    if (c === CLUSTER_NAME) {
-      // Local cluster: patch Service labels + HTTPRoute via k8s API
-      await patchServiceMode(mode);
-      await patchHTTPRoute(mode);
+
+    // Always patch local cluster k8s resources
+    await patchServiceMode(mode);
+    if (mode === 'federated') {
+      await deleteHTTPRoute();
     } else {
-      // Remote cluster: proxy via Linkerd service mirroring
-      await proxyScale(c, '/api/admin/set-mode', req.body);
+      await createOrPatchHTTPRoute(mode);
     }
-    // Store mode in Redis for all clusters
+
+    // Propagate to all remote clusters so they patch their own Service labels + HTTPRoute
     const names = await clusterNames();
+    const remotes = names.filter(n => n !== CLUSTER_NAME);
+    const proxyErrors = [];
+    await Promise.all(remotes.map(async (remote) => {
+      try {
+        await proxyScale(remote, '/api/admin/set-mode', { ...req.body, cluster: remote });
+      } catch (err) {
+        console.error(`set-mode proxy to ${remote} failed:`, err.message);
+        proxyErrors.push(remote);
+      }
+    }));
+
+    // Store mode in Redis for all clusters
     await Promise.all(names.map(n => redis.hset(k(n, 'game:state'), 'multicluster_mode', mode)));
-    await pushLog(c, `Multicluster mode set to ${mode}`);
-    res.json({ mode });
+    await pushLog(CLUSTER_NAME, `Multicluster mode set to ${mode}`);
+    const result = { mode };
+    if (proxyErrors.length) {
+      result.warnings = `Failed to propagate to: ${proxyErrors.join(', ')}`;
+    }
+    res.json(result);
   } catch (err) {
     console.error('set-mode failed:', err.message);
     res.status(err.status || 500).json({ error: err.message });
@@ -589,37 +665,47 @@ app.post('/api/admin/toggle-mtls', async (req, res) => {
     checkToken(req.body);
     const c = targetCluster(req.body);
     const cur = b(await redis.hget(k(c, 'game:state'), 'mtls_enabled'));
+
     const mapping = { mtls_enabled: cur ? '0' : '1' };
     if (!cur) mapping.interceptor_active = '0';
-    await redis.hset(k(c, 'game:state'), ...Object.entries(mapping).flat());
 
-    // Patch the tetris-api deployment linkerd.io/inject annotation
-    const injectValue = cur ? 'disabled' : 'enabled';
     if (c === CLUSTER_NAME) {
-      try {
-        const creds = k8sCreds();
-        await k8sRequest('PATCH',
-          `/apis/apps/v1/namespaces/${creds.namespace}/deployments/${DEPLOYMENT_NAME}`,
-          {
-            spec: {
-              template: {
-                metadata: {
-                  annotations: {
-                    'linkerd.io/inject': injectValue,
+      // Local cluster: update Redis state and patch k8s deployments
+      await redis.hset(k(c, 'game:state'), ...Object.entries(mapping).flat());
+
+      // Patch deployment annotations to enable/disable Linkerd proxy injection
+      // and trigger a rollout restart
+      const injectValue = cur ? 'disabled' : 'enabled';
+      const restartedAt = new Date().toISOString();
+      const deployments = ['tetris-api', 'tetris-frontend'];
+      for (const dep of deployments) {
+        try {
+          const creds = k8sCreds();
+          await k8sRequest('PATCH',
+            `/apis/apps/v1/namespaces/${creds.namespace}/deployments/${dep}`,
+            {
+              spec: {
+                template: {
+                  metadata: {
+                    annotations: {
+                      'linkerd.io/inject': injectValue,
+                      'kubectl.kubernetes.io/restartedAt': restartedAt,
+                    },
                   },
                 },
               },
-            },
-          }
-        );
-      } catch (k8sErr) {
-        console.error('k8s mTLS annotation patch failed:', k8sErr.message);
+            }
+          );
+        } catch (k8sErr) {
+          console.error(`Failed to patch deployment ${dep}:`, k8sErr.message);
+        }
       }
     } else {
+      // Remote cluster: proxy to remote dashboard-api
       try {
         await proxyScale(c, '/api/admin/toggle-mtls', req.body);
       } catch (proxyErr) {
-        console.error('remote mTLS annotation patch failed:', proxyErr.message);
+        console.error('remote mTLS toggle failed:', proxyErr.message);
       }
     }
 
@@ -657,65 +743,139 @@ app.post('/api/admin/set-auth-policy', async (req, res) => {
     const ALWAYS_ALLOWED = ['dashboard-api', 'dashboard-frontend'];
     const allAllowed = [...new Set([...ALWAYS_ALLOWED, ...allowedUsers])];
 
-    if (enabled) {
-      // Deploy Server + AuthorizationPolicy and set default inbound to deny
-      try {
-        const creds = k8sCreds();
-        const ns = creds.namespace;
+    if (c === CLUSTER_NAME) {
+      if (enabled) {
+        // Deploy MeshTLSAuthentication + AuthorizationPolicy
+        // (the Server resource is managed separately by set-access-policy / Deny All)
+        try {
+          const creds = k8sCreds();
+          const ns = creds.namespace;
 
-        // Set default-inbound-policy to deny on tetris-api deployment
-        await k8sRequest('PATCH',
-          `/apis/apps/v1/namespaces/${ns}/deployments/${DEPLOYMENT_NAME}`,
-          {
+          // MeshTLSAuthentication listing allowed service accounts
+          const meshTLSAuthn = {
+            apiVersion: 'policy.linkerd.io/v1alpha1',
+            kind: 'MeshTLSAuthentication',
+            metadata: {
+              name: `tetris-api-authn-${c}`,
+              namespace: ns,
+            },
             spec: {
-              template: {
-                metadata: {
-                  annotations: {
-                    'config.linkerd.io/default-inbound-policy': 'deny',
-                  },
-                },
+              identityRefs: allAllowed.map(sa => ({
+                kind: 'ServiceAccount',
+                name: sa,
+              })),
+            },
+          };
+
+          // AuthorizationPolicy referencing the MeshTLSAuthentication
+          const authPolicy = {
+            apiVersion: 'policy.linkerd.io/v1alpha1',
+            kind: 'AuthorizationPolicy',
+            metadata: {
+              name: `tetris-api-auth-${c}`,
+              namespace: ns,
+            },
+            spec: {
+              targetRef: {
+                group: 'policy.linkerd.io',
+                kind: 'Server',
+                name: `tetris-api-server-${c}`,
               },
+              requiredAuthenticationRefs: [{
+                name: `tetris-api-authn-${c}`,
+                kind: 'MeshTLSAuthentication',
+                group: 'policy.linkerd.io',
+              }],
             },
+          };
+
+          // Apply MeshTLSAuthentication (create or replace)
+          try {
+            await k8sRequest('POST',
+              `/apis/policy.linkerd.io/v1alpha1/namespaces/${ns}/meshtlsauthentications`,
+              meshTLSAuthn
+            );
+          } catch {
+            await k8sRequest('PATCH',
+              `/apis/policy.linkerd.io/v1alpha1/namespaces/${ns}/meshtlsauthentications/tetris-api-authn-${c}`,
+              meshTLSAuthn
+            );
           }
-        );
 
-        // Create/update Server resource for tetris-api
-        const server = {
-          apiVersion: 'policy.linkerd.io/v1beta3',
-          kind: 'Server',
-          metadata: {
-            name: `tetris-api-server-${c}`,
-            namespace: ns,
-          },
-          spec: {
-            podSelector: { matchLabels: { 'app.kubernetes.io/component': 'tetris-api' } },
-            port: SERVICE_PORT,
-          },
-        };
+          // Apply AuthorizationPolicy (create or replace)
+          try {
+            await k8sRequest('POST',
+              `/apis/policy.linkerd.io/v1alpha1/namespaces/${ns}/authorizationpolicies`,
+              authPolicy
+            );
+          } catch {
+            await k8sRequest('PATCH',
+              `/apis/policy.linkerd.io/v1alpha1/namespaces/${ns}/authorizationpolicies/tetris-api-auth-${c}`,
+              authPolicy
+            );
+          }
+        } catch (k8sErr) {
+          console.error('k8s auth policy deploy failed:', k8sErr.message);
+        }
 
-        // Create/update AuthorizationPolicy targeting the Server
-        const authPolicy = {
-          apiVersion: 'policy.linkerd.io/v1alpha1',
-          kind: 'AuthorizationPolicy',
-          metadata: {
-            name: `tetris-api-auth-${c}`,
-            namespace: ns,
-          },
-          spec: {
-            targetRef: {
-              group: 'policy.linkerd.io',
-              kind: 'Server',
-              name: `tetris-api-server-${c}`,
-            },
-            requiredAuthenticationRefs: allAllowed.map(sa => ({
-              name: sa,
-              kind: 'ServiceAccount',
-              group: '',
-            })),
-          },
-        };
+        await pushLog(c, `Auth policy set: allow [${allAllowed.join(', ')}]`);
+      } else {
+        // Remove k8s resources and reset default inbound policy
+        try {
+          const creds = k8sCreds();
+          const ns = creds.namespace;
 
-        // Apply Server (create or replace)
+          try {
+            await k8sRequest('DELETE',
+              `/apis/policy.linkerd.io/v1alpha1/namespaces/${ns}/authorizationpolicies/tetris-api-auth-${c}`
+            );
+          } catch { /* ignore if not found */ }
+          try {
+            await k8sRequest('DELETE',
+              `/apis/policy.linkerd.io/v1alpha1/namespaces/${ns}/meshtlsauthentications/tetris-api-authn-${c}`
+            );
+          } catch { /* ignore if not found */ }
+        } catch (k8sErr) {
+          console.error('k8s auth policy cleanup failed:', k8sErr.message);
+        }
+
+        await pushLog(c, 'Auth policy removed');
+      }
+    } else {
+      await proxyScale(c, '/api/admin/set-auth-policy', req.body);
+    }
+
+    res.json({ auth_policy_enabled: enabled, allowed_users: allowedUsers });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/set-access-policy', async (req, res) => {
+  try {
+    checkToken(req.body);
+    const c = targetCluster(req.body);
+    const accessPolicy = req.body.access_policy || 'all-unauthenticated';
+
+    if (c === CLUSTER_NAME) {
+      const creds = k8sCreds();
+      const ns = creds.namespace;
+      const serverName = `tetris-api-server-${c}`;
+
+      // Ensure Server resource exists, then set the accessPolicy
+      const server = {
+        apiVersion: 'policy.linkerd.io/v1beta3',
+        kind: 'Server',
+        metadata: { name: serverName, namespace: ns },
+        spec: {
+          podSelector: { matchLabels: { 'app.kubernetes.io/component': 'tetris-api' } },
+          port: SERVICE_PORT,
+          accessPolicy,
+        },
+      };
+
+      if (accessPolicy === 'deny') {
+        // Deploy Server resource with deny-by-default
         try {
           await k8sRequest('POST',
             `/apis/policy.linkerd.io/v1beta3/namespaces/${ns}/servers`,
@@ -723,69 +883,29 @@ app.post('/api/admin/set-auth-policy', async (req, res) => {
           );
         } catch {
           await k8sRequest('PATCH',
-            `/apis/policy.linkerd.io/v1beta3/namespaces/${ns}/servers/tetris-api-server-${c}`,
-            server
+            `/apis/policy.linkerd.io/v1beta3/namespaces/${ns}/servers/${serverName}`,
+            { spec: { accessPolicy: 'deny' } }
           );
         }
-
-        // Apply AuthorizationPolicy (create or replace)
+        await pushLog(c, 'Server deployed — all traffic denied');
+      } else {
+        // Delete the Server resource entirely
         try {
-          await k8sRequest('POST',
-            `/apis/policy.linkerd.io/v1alpha1/namespaces/${ns}/authorizationpolicies`,
-            authPolicy
+          await k8sRequest('DELETE',
+            `/apis/policy.linkerd.io/v1beta3/namespaces/${ns}/servers/${serverName}`
           );
-        } catch {
-          await k8sRequest('PATCH',
-            `/apis/policy.linkerd.io/v1alpha1/namespaces/${ns}/authorizationpolicies/tetris-api-auth-${c}`,
-            authPolicy
-          );
-        }
-      } catch (k8sErr) {
-        console.error('k8s auth policy deploy failed:', k8sErr.message);
+        } catch { /* ignore if not found */ }
+        await pushLog(c, 'Server deleted — traffic allowed');
       }
 
-      await pushLog(c, `Auth policy set: allow [${allAllowed.join(', ')}]`);
+      await redis.hset(k(c, 'game:state'), 'access_policy', accessPolicy);
     } else {
-      // Remove k8s resources and reset default inbound policy
-      try {
-        const creds = k8sCreds();
-        const ns = creds.namespace;
-
-        // Remove default-inbound-policy annotation from tetris-api deployment
-        await k8sRequest('PATCH',
-          `/apis/apps/v1/namespaces/${ns}/deployments/${DEPLOYMENT_NAME}`,
-          {
-            spec: {
-              template: {
-                metadata: {
-                  annotations: {
-                    'config.linkerd.io/default-inbound-policy': null,
-                  },
-                },
-              },
-            },
-          }
-        );
-
-        try {
-          await k8sRequest('DELETE',
-            `/apis/policy.linkerd.io/v1alpha1/namespaces/${ns}/authorizationpolicies/tetris-api-auth-${c}`
-          );
-        } catch { /* ignore if not found */ }
-        try {
-          await k8sRequest('DELETE',
-            `/apis/policy.linkerd.io/v1beta3/namespaces/${ns}/servers/tetris-api-server-${c}`
-          );
-        } catch { /* ignore if not found */ }
-      } catch (k8sErr) {
-        console.error('k8s auth policy cleanup failed:', k8sErr.message);
-      }
-
-      await pushLog(c, 'Auth policy removed');
+      await proxyScale(c, '/api/admin/set-access-policy', req.body);
     }
 
-    res.json({ auth_policy_enabled: enabled, allowed_users: allowedUsers });
+    res.json({ access_policy: accessPolicy });
   } catch (err) {
+    console.error('set-access-policy failed:', err.message);
     res.status(err.status || 500).json({ error: err.message });
   }
 });

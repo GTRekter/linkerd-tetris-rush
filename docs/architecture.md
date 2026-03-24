@@ -12,31 +12,31 @@ Tetris Rush is a four-component system deployed across multiple Kubernetes clust
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        Dashboard Cluster                            │
 │                                                                     │
-│  ┌──────────────────┐     ┌──────────────────┐                      │
-│  │ dashboard-frontend│────▶│  dashboard-api   │                      │
-│  │ (React + Express) │     │  (Node/Express)  │                      │
-│  └──────────────────┘     └────────┬─────────┘                      │
-│         ▲ presenter                │                                │
-│         │ browser                  │ reads/writes                   │
-│                                    ▼                                │
+│  ┌────────────────────┐     ┌──────────────────┐                    │
+│  │ dashboard-frontend │────▶│  dashboard-api   │                    │
+│  │ (React + Express)  │     │  (Node/Express)  │                    │
+│  └────────────────────┘     └────────┬─────────┘                    │
+│         ▲ presenter                  │                              │
+│         │ browser                    │ reads/writes                 │
+│                                      ▼                              │
 │                              ┌──────────┐                           │
 │                              │  Redis   │◀── shared by all clusters │
 │                              └──────────┘                           │
 └─────────────────────────────────────────────────────────────────────┘
 
-┌──────────────────────────────────┐  ┌──────────────────────────────┐
-│         Cluster: us-east         │  │       Cluster: eu-west       │
-│                                  │  │                              │
-│ ┌────────────────┐ ┌───────────┐│  │┌────────────────┐┌─────────┐│
-│ │tetris-frontend ├▶│ tetris-api ││  ││tetris-frontend ├▶│tetris-api││
-│ │(React+Express) │ │ (FastAPI) ││  ││(React+Express) ││(FastAPI) ││
-│ └────────────────┘ └───────────┘│  │└────────────────┘└─────────┘│
-│        ▲ player phone           │  │                              │
-│        │ via QR                 │  │                              │
-│ ┌────────────┐                  │  │ ┌────────────┐              │
-│ │dashboard-api│ (for k8s scale) │  │ │dashboard-api│              │
-│ └────────────┘                  │  │ └────────────┘              │
-└──────────────────────────────────┘  └──────────────────────────────┘
+┌──────────────────────────────────┐  ┌────────────────────────────────┐
+│        Cluster: ap-central       │  │       Cluster: ap-south        │
+│                                  │  │                                │
+│ ┌────────────────┐ ┌────────────┐│  │┌────────────────┐ ┌───────────┐│
+│ │tetris-frontend ├▶│ tetris-api ││  ││tetris-frontend ├▶│tetris-api ││
+│ │(React+Express) │ │ (FastAPI)  ││  ││(React+Express) │ │(FastAPI)  ││
+│ └────────────────┘ └────────────┘│  │└────────────────┘ └───────────┘│
+│        ▲ player phone            │  │                                │
+│        │ via QR                  │  │                                │
+│ ┌─────────────┐                  │  │ ┌─────────────┐                │
+│ │dashboard-api│ (for k8s scale)  │  │ │dashboard-api│                │
+│ └─────────────┘                  │  │ └─────────────┘                │
+└──────────────────────────────────┘  └────────────────────────────────┘
 ```
 
 ---
@@ -151,11 +151,11 @@ Player board needs next piece
         │
    Linkerd sidecar load-balances across all clusters
         │
-   ┌────┴────┬────────┐
-   │         │        │
- us-east  eu-west  ap-south
-   │         │        │
-   └────┬────┴────────┘
+   ┌────┴────┬────────────┐
+   │         │            │
+ ap-east  ap-central  ap-south
+   │         │            │
+   └────┬────┴────────────┘
         │
   Scenario effects applied:
   - Latency injection (sleep)
@@ -180,11 +180,11 @@ QR code → GET {DASHBOARD_URL}/go
                ▼
          dashboard-api
                │
-     ┌─────────┴──────────┐
+     ┌─────────┴───────────┐
      │  Redis INCR         │
      │  global:redirect:   │
      │  counter            │
-     └─────────┬──────────┘
+     └─────────┬───────────┘
                │
      counter mod len(clusters) → index
                │
@@ -195,10 +195,10 @@ QR code → GET {DASHBOARD_URL}/go
                ▼
      302 Redirect → {cluster_external_url}/play
 
-  User 1 → us-east/play
-  User 2 → eu-west/play
+  User 1 → ap-east/play
+  User 2 → ap-central/play
   User 3 → ap-south/play
-  User 4 → us-east/play  (wraps around)
+  User 4 → ap-east/play  (wraps around)
 ```
 
 ### Admin Action Flow
@@ -264,7 +264,7 @@ Core game/scenario state for a cluster. Read on every piece request.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `active_scenario` | string | `"httproute"` | Currently active demo module (`httproute`, `latency`, `mtls`, `auth-policy`, `resiliency`) |
+| `active_scenario` | string | `"httproute"` | Currently active demo module (`httproute`, `latency`, `mtls`, `auth-policy`, `resiliency`, `egress`) |
 | `mtls_enabled` | `"0"` / `"1"` | `"1"` | Whether mTLS is active; when `"0"`, pieces may be corrupted in transit |
 | `interceptor_active` | `"0"` / `"1"` | `"0"` | Set to `"1"` when a corruption event occurs (for dashboard indicator) |
 | `intercepted_count` | int string | `"0"` | Running count of tampered pieces |
@@ -273,6 +273,8 @@ Core game/scenario state for a cluster. Read on every piece request.
 | `egress_enabled` | `"0"` / `"1"` | `"0"` | Whether egress bonus pieces are active (25% chance of forced "I" piece) |
 | `artificial_latency_ms` | int string | `"0"` | Milliseconds of sleep injected before each piece response |
 | `healthy` | `"0"` / `"1"` | `"1"` | Cluster health flag; `"0"` causes `/api/health` and `/api/next-piece` to return 503 |
+| `failure_enabled` | `"0"` / `"1"` | `"0"` | Whether 503 failure injection is active; when `"1"`, all `/api/next-piece` requests return 503 |
+| `access_policy` | string | `"allow"` | Current access policy mode (used by dashboard to display policy state) |
 | `traffic_weights` | JSON string | `"{}"` | Informational traffic weight map (actual routing is handled by Linkerd) |
 
 #### `{cluster}:game:stats` (Hash)
@@ -304,11 +306,11 @@ Cluster identity, written by tetris-api on startup. Used by dashboard-api for cl
 
 | Field | Type | Description |
 |---|---|---|
-| `name` | string | Cluster display name (e.g., `"us-east"`) |
+| `name` | string | Cluster display name (e.g., `"ap-east"`) |
 | `color` | string | Hex color (e.g., `"#3b82f6"`) |
-| `region` | string | Region label (e.g., `"US East (N. Virginia)"`) |
+| `region` | string | Region label (e.g., `"ap-east"`) |
 | `pod` | string | Hostname of the pod that last wrote this key |
-| `external_url` | string | Public URL of this cluster's tetris-frontend (e.g., `"https://east.example.com"`) |
+| `external_url` | string | Public URL of this cluster's tetris-frontend (e.g., `"http://ap-east.localhost:8080"`) |
 
 #### `{cluster}:event:log` (List)
 
@@ -317,7 +319,7 @@ Capped event log (max 200 entries). Each entry is a JSON string.
 ```json
 {
   "time": "2025-03-15T14:30:00.000Z",
-  "cluster": "us-east",
+  "cluster": "ap-east",
   "text": "Latency set to 800ms"
 }
 ```
@@ -356,7 +358,7 @@ Dashboard-api discovers clusters dynamically by scanning Redis keys:
 
 ```javascript
 const keys = await redis.keys('*:game:cluster');
-// keys = ["us-east:game:cluster", "eu-west:game:cluster", "ap-south:game:cluster"]
+// keys = ["ap-east:game:cluster", "ap-central:game:cluster", "ap-south:game:cluster"]
 // cluster names extracted by stripping ":game:cluster" suffix
 ```
 
@@ -395,7 +397,7 @@ This means clusters self-register by writing their identity to `{cluster}:game:c
 ### How Federated vs. Exported Services Differ
 
 - **Federated (`tetris-api`):** All cluster endpoints are merged into one virtual service (`tetris-api-federated`). Linkerd load-balances across all clusters transparently. The client resolves a single DNS name.
-- **Exported (`dashboard-api`, `redis`):** Each cluster's service appears as a distinct mirrored service in the target cluster (e.g., `dashboard-api-eu-west`). The client must explicitly choose which cluster to call.
+- **Exported (`dashboard-api`, `redis`):** Each cluster's service appears as a distinct mirrored service in the target cluster (e.g., `dashboard-api-vastaya-ap-central`). The client must explicitly choose which cluster to call.
 
 ---
 
@@ -421,7 +423,8 @@ This means clusters self-register by writing their identity to `{cluster}:game:c
 | `REDIS_URL` | Redis connection URL | `redis://localhost:6379` |
 | `ADMIN_TOKEN` | Token required for admin write endpoints | `demo-admin-2024` |
 | `DEPLOYMENT_NAME` | Name of the tetris-api Deployment (for k8s scaling) | `tetris-api` |
-| `POD_NAMESPACE` | Kubernetes namespace (for service DNS and scaling) | `default` |
+| `SERVICE_PORT` | Port number for the tetris-api Service (used in k8s Service patches) | `80` |
+| `HTTPROUTE_NAME` | Name of the HTTPRoute resource (used for mode switching) | `tetris-api` |
 
 ### tetris-frontend
 
@@ -460,15 +463,7 @@ The Helm chart at `helm/tetris/` deploys all four components plus Redis.
 
 ### Per-Cluster Overrides
 
-Each cluster is deployed with its own values file:
-
-```bash
-helm upgrade --install tetris ./helm/tetris -f helm/values-us-east.yaml
-helm upgrade --install tetris ./helm/tetris -f helm/values-eu-west.yaml
-helm upgrade --install tetris ./helm/tetris -f helm/values-ap-south.yaml
-```
-
-Override files set `cluster.name`, `cluster.color`, `cluster.region`, `externalUrl`, and `redis.url` (pointing to the dashboard cluster's Redis). Only one cluster sets `redis.deploy: true` and `dashboard.enabled: true`.
+Each cluster is deployed with `--set` overrides from `scripts/k3d.sh`. The script sets `cluster.name`, `cluster.color`, `cluster.region`, `externalUrl`, and `redis.url` (pointing to the dashboard cluster's Redis LoadBalancer IP). Only the first cluster (`ap-east`) sets `redis.deploy: true` and `dashboard.enabled: true`.
 
 ---
 
@@ -492,5 +487,5 @@ Standard Tetrominos: `I`, `O`, `T`, `S`, `Z`, `J`, `L`.
 
 Scenario-specific behavior:
 - **Egress enabled:** 25% chance of forced `I` piece, flagged as `egress: true`
-- **mTLS disabled:** 60% chance of piece type being swapped to a random different type (`corrupted: true`)
+- **mTLS disabled:** 80% chance of piece type being swapped to a random different type (`corrupted: true`)
 - **Auth policy enabled:** 35% chance of `403 Forbidden` (no piece returned)

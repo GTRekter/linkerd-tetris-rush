@@ -182,7 +182,8 @@ input[type="checkbox"] {
     color: #6ddb8c;
 }
 
-.feedback.error {
+.feedback.error,
+.feedback.danger {
     background: rgba(220, 53, 69, 0.15);
     border: 1px solid rgba(220, 53, 69, 0.3);
     color: #f08090;

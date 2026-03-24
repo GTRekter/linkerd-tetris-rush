@@ -1,0 +1,107 @@
+/* ── Board — full viewport height ─────────────────────────────────────────── */
+
+.tetris-board-wrap {
+    position: relative;
+    height: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.tetris-board {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 1px;
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+    padding: 2px;
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    /* Fill all available height below the nav */
+    height: calc(100vh - 68px);
+    aspect-ratio: 1 / 2;
+}
+
+.tetris-cell {
+    border-radius: 2px;
+    border: 1px solid transparent;
+    transition: background 0.06s;
+}
+
+.tetris-cell.empty {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.tetris-cell.locked {
+    border-width: 1px;
+    border-style: solid;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.15);
+}
+
+.tetris-cell.active {
+    border-width: 1px;
+    border-style: solid;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 0 6px rgba(255,255,255,0.1);
+}
+
+.tetris-cell.ghost {
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px dashed rgba(255, 255, 255, 0.18);
+}
+
+.tetris-cell.corrupted {
+    background: #000000 !important;
+    border-color: #ef4444 !important;
+    animation: corrupt-flicker 0.3s ease-out;
+}
+
+@keyframes corrupt-flicker {
+    0%  { opacity: 1; }
+    25% { opacity: 0.4; }
+    50% { opacity: 1; }
+    75% { opacity: 0.6; }
+    100%{ opacity: 1; }
+}
+
+/* ── Status overlay ───────────────────────────────────────────────────────── */
+
+.tetris-status-msg {
+    position: absolute;
+    top: -36px;
+    left: 0;
+    right: 0;
+    font-size: 0.75rem;
+    text-align: center;
+    z-index: 10;
+    padding: 4px 8px;
+    border-radius: 6px;
+    animation: slide-in 0.2s ease-out;
+}
+
+.tetris-waiting {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.6);
+    border-radius: 6px;
+    z-index: 20;
+    backdrop-filter: blur(4px);
+}
+
+.waiting-spinner {
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    border: 3px solid rgba(99, 140, 255, 0.2);
+    border-top-color: #638cff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}

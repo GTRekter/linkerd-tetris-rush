@@ -3,7 +3,7 @@
 
 # Player-facing Express proxy — always on, serves game UI
 tetrisFrontend:
-  replicaCount: 2
+  replicaCount: 1
   image:
     repository: tetris
     tag: local
@@ -11,7 +11,7 @@ tetrisFrontend:
 
 # FastAPI backend — scaled to 0 during failover demo
 tetrisApi:
-  replicaCount: 2
+  replicaCount: 1
   image:
     repository: tetris-api
     tag: local
@@ -97,10 +97,3 @@ ingress:
     enabled: false
     secretName: ""
   annotations: {}
-
-# Mirrored service names from other clusters.
-# Used by mirrored and gateway modes for HTTPRoute backend generation.
-multicluster:
-  backends:
-    # - tetris-api-eu-west
-    # - tetris-api-ap-south

@@ -28,36 +28,36 @@ For the complete request flow diagrams, Redis data model, and component architec
 
 ### What happens in the cluster
 
-The `TrafficSplit` resource on us-east distributes `/api/next-piece` requests across three backends:
+An `HTTPRoute` resource on ap-east distributes `/api/next-piece` requests across three backends:
 
 ```yaml
-backends:
-  - service: tetris          # local — us-east
-    weight: 40
-  - service: tetris-eu-west  # mirrored from eu-west
-    weight: 30
-  - service: tetris-ap-south # mirrored from ap-south
-    weight: 30
+backendRefs:
+  - name: tetris-api                       # local — ap-east
+    weight: 1
+  - name: tetris-api-vastaya-ap-central    # mirrored from ap-central
+    weight: 1
+  - name: tetris-api-vastaya-ap-south      # mirrored from ap-south
+    weight: 1
 ```
 
-The mirrored services (`tetris-eu-west`, `tetris-ap-south`) are created automatically by Linkerd's service mirror controller when it detects the `mirror.linkerd.io/exported: "true"` label on services in the linked clusters.
+The mirrored services (`tetris-api-vastaya-ap-central`, `tetris-api-vastaya-ap-south`) are created automatically by Linkerd's service mirror controller when it detects the appropriate multicluster label on services in the linked clusters.
 
 ### What players see
 
-Each piece has a colored badge — blue for us-east, purple for eu-west, cyan for ap-south. Pieces appear in roughly the same ratio as the configured weights.
+Each piece has a colored badge — blue for ap-east, purple for ap-central, cyan for ap-south. Pieces appear in roughly the same ratio as the configured weights.
 
 ### Demo talking points
 
-- Start with default weights (40/30/30) — attendees immediately see three cluster colors
-- Slide us-east to 100% — all badges turn blue instantly
+- Start with equal weights — attendees immediately see three cluster colors
+- Slide ap-east to 100% — all badges turn blue instantly
 - Slide it back to equal — color distribution rebalances
-- Point out: no application changes, no redeploy; only the `TrafficSplit` resource changed
+- Point out: no application changes, no redeploy; only the `HTTPRoute` resource changed
 
 ### Linkerd features involved
 
 - **Service mirroring** — the mirror controller watches linked clusters and creates local `ClusterIP` services for each exported service
-- **SMI TrafficSplit** — Linkerd's proxy intercepts requests to `tetris` and applies the weight distribution before forwarding
-- **Multicluster gateways** — traffic to `tetris-eu-west` exits us-east via its gateway, crosses the network, and enters eu-west via its gateway
+- **HTTPRoute traffic splitting** — Linkerd's proxy intercepts requests to `tetris-api` and applies the weight distribution defined in the HTTPRoute before forwarding
+- **Multicluster gateways** — traffic to `tetris-api-vastaya-ap-central` exits ap-east via its gateway, crosses the network, and enters ap-central via its gateway
 
 ---
 
@@ -82,9 +82,9 @@ When a piece request is routed to a high-latency cluster, the player sees a "Fet
 
 ### Demo talking points
 
-- Inject 800ms on eu-west — players served by it visibly stall between pieces
+- Inject 800ms on ap-central — players served by it visibly stall between pieces
 - Point to the dashboard event log — each piece arrival shows its cluster and latency
-- Inject 2000ms on ap-south while eu-west is at 0 — demonstrate that players hitting different clusters get very different experiences
+- Inject 2000ms on ap-south while ap-central is at 0 — demonstrate that players hitting different clusters get very different experiences
 - Explain that in production, this latency could come from geographic distance, slow dependencies, or resource contention — Linkerd makes it visible and measurable without instrumentation
 
 ### Linkerd features involved
@@ -143,7 +143,7 @@ When the presenter enables the auth policy on a cluster, the backend probabilist
 
 ```python
 if game_state.active_scenario == "auth-policy" and game_state.auth_policy_enabled:
-    if random.random() < 0.auth_deny_rate:   # 0.35
+    if random.random() < deny_rate:   # 0.35
         raise HTTPException(status_code=403, detail={
             "type": "auth_denied",
             "message": f"AuthorizationPolicy: cluster {CLUSTER_NAME} not authorized to serve this request",
@@ -197,7 +197,7 @@ The dashboard cluster card goes red with a "DOWN — failover!" event in the log
 ### Demo talking points
 
 - "Right now pieces are flowing to all three clusters." Kill ap-south mid-game.
-- "ap-south is down. Watch the dashboard — traffic automatically reroutes to us-east and eu-west."
+- "ap-south is down. Watch the dashboard — traffic automatically reroutes to ap-east and ap-central."
 - "Every player who was being served by ap-south just got their next piece from a different cluster. Did anyone's game stop? No."
 - Revive: "ap-south is back. Linkerd detects the health check passing and starts routing to it again."
 - "This is failover at the mesh layer, not at the application layer. No circuit breaker code, no retry logic in the app."
@@ -254,11 +254,11 @@ Linkerd mirrors `tetris-api` into linked clusters. Traffic flows **pod-to-pod** 
 
 ```yaml
 backendRefs:
-  - name: tetris-api           # local
+  - name: tetris-api                       # local
     weight: 1
-  - name: tetris-api-eu-west   # mirrored
+  - name: tetris-api-vastaya-ap-central    # mirrored
     weight: 1
-  - name: tetris-api-ap-south  # mirrored
+  - name: tetris-api-vastaya-ap-south      # mirrored
     weight: 1
 ```
 
@@ -270,11 +270,11 @@ Linkerd mirrors `tetris-api` into linked clusters. Traffic flows **through the m
 
 ```yaml
 backendRefs:
-  - name: tetris-api           # local
+  - name: tetris-api                       # local
     weight: 1
-  - name: tetris-api-eu-west   # mirrored
+  - name: tetris-api-vastaya-ap-central    # mirrored
     weight: 1
-  - name: tetris-api-ap-south  # mirrored
+  - name: tetris-api-vastaya-ap-south      # mirrored
     weight: 1
 ```
 
@@ -298,17 +298,14 @@ The dashboard-api patches the `tetris-api` Service labels and updates the HTTPRo
 
 ### Helm configuration
 
-Set the initial mode and the list of mirrored backends:
+Set the initial multicluster mode:
 
 ```yaml
 service:
   mode: federated   # federated | mirrored | gateway
-
-multicluster:
-  backends:
-    - tetris-api-eu-west
-    - tetris-api-ap-south
 ```
+
+Mirrored backend names (e.g., `tetris-api-vastaya-ap-central`, `tetris-api-vastaya-ap-south`) are discovered dynamically by the dashboard-api at runtime via Linkerd's service mirror controller — no static backend list is needed in the Helm values.
 
 ---
 
@@ -318,7 +315,7 @@ The active scenario is stored per-cluster in `GameState.active_scenario`. Switch
 
 | State field | Type | Default | Modified by |
 |---|---|---|---|
-| `active_scenario` | string | `traffic-split` | `set-scenario` |
+| `active_scenario` | string | `httproute` | `set-scenario` |
 | `healthy` | bool | `true` | `toggle-health` |
 | `artificial_latency_ms` | int | `0` | `set-latency` |
 | `mtls_enabled` | bool | `true` | `toggle-mtls` |
