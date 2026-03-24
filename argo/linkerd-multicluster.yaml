@@ -1,5 +1,5 @@
 # Linkerd multicluster extension — each cluster gets a gateway and
-# service-mirror controllers pointing to the other two clusters.
+# service-mirror controllers pointing to every other cluster.
 #
 # The k3d.sh script also runs `linkerd multicluster link-gen` to create
 # Link resources and RBAC for cross-cluster discovery. Those Link resources
@@ -9,7 +9,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: linkerd-multicluster-tetris-ap-east
+  name: linkerd-multicluster-gameplay-east
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "3"
@@ -26,12 +26,18 @@ spec:
         controllers:
           - link:
               ref:
-                name: tetris-ap-central
+                name: gameplay-west
           - link:
               ref:
-                name: tetris-ap-south
+                name: gameplay-central
+          - link:
+              ref:
+                name: scoring
+          - link:
+              ref:
+                name: platform
   destination:
-    server: "https://tetris-ap-east:6443"
+    server: "https://gameplay-east:6443"
     namespace: linkerd-multicluster
   syncPolicy:
     automated:
@@ -44,7 +50,7 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: linkerd-multicluster-tetris-ap-central
+  name: linkerd-multicluster-gameplay-west
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "3"
@@ -61,12 +67,18 @@ spec:
         controllers:
           - link:
               ref:
-                name: tetris-ap-east
+                name: gameplay-east
           - link:
               ref:
-                name: tetris-ap-south
+                name: gameplay-central
+          - link:
+              ref:
+                name: scoring
+          - link:
+              ref:
+                name: platform
   destination:
-    server: "https://tetris-ap-central:6443"
+    server: "https://gameplay-west:6443"
     namespace: linkerd-multicluster
   syncPolicy:
     automated:
@@ -79,7 +91,7 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: linkerd-multicluster-tetris-ap-south
+  name: linkerd-multicluster-gameplay-central
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "3"
@@ -96,12 +108,100 @@ spec:
         controllers:
           - link:
               ref:
-                name: tetris-ap-east
+                name: gameplay-east
           - link:
               ref:
-                name: tetris-ap-central
+                name: gameplay-west
+          - link:
+              ref:
+                name: scoring
+          - link:
+              ref:
+                name: platform
   destination:
-    server: "https://tetris-ap-south:6443"
+    server: "https://gameplay-central:6443"
+    namespace: linkerd-multicluster
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: linkerd-multicluster-scoring
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: tetris
+  source:
+    repoURL: https://helm.buoyant.cloud
+    chart: linkerd-enterprise-multicluster
+    targetRevision: "*"
+    helm:
+      valuesObject:
+        gateway:
+          enabled: true
+        controllers:
+          - link:
+              ref:
+                name: gameplay-east
+          - link:
+              ref:
+                name: gameplay-west
+          - link:
+              ref:
+                name: gameplay-central
+          - link:
+              ref:
+                name: platform
+  destination:
+    server: "https://scoring:6443"
+    namespace: linkerd-multicluster
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: linkerd-multicluster-platform
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: tetris
+  source:
+    repoURL: https://helm.buoyant.cloud
+    chart: linkerd-enterprise-multicluster
+    targetRevision: "*"
+    helm:
+      valuesObject:
+        gateway:
+          enabled: true
+        controllers:
+          - link:
+              ref:
+                name: gameplay-east
+          - link:
+              ref:
+                name: gameplay-west
+          - link:
+              ref:
+                name: gameplay-central
+          - link:
+              ref:
+                name: scoring
+  destination:
+    server: "https://platform:6443"
     namespace: linkerd-multicluster
   syncPolicy:
     automated:

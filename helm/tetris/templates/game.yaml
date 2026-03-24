@@ -1,5 +1,6 @@
 # game — player-facing Express proxy that serves the game UI
 # and proxies /api/* to game-api through the mesh.
+{{- if .Values.game.enabled }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -44,8 +45,8 @@ spec:
               value: "http://game-api.{{ .Release.Namespace }}.svc.cluster.local"
             - name: API_TARGET_FEDERATED
               value: "http://game-api-federated.{{ .Release.Namespace }}.svc.cluster.local"
-            - name: DASHBOARD_API_URL
-              value: "http://dashboard-api.{{ .Release.Namespace }}.svc.cluster.local"
+            - name: AGENT_URL
+              value: "http://agent.{{ .Release.Namespace }}.svc.cluster.local"
           resources:
             requests:
               cpu: 50m
@@ -84,3 +85,4 @@ spec:
   selector:
     {{- include "tetris.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: game
+{{- end }}

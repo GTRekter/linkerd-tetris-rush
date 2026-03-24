@@ -7,26 +7,49 @@ set -euo pipefail
 
 directory_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 directory_root="$(cd "$directory_script/.." && pwd)"
-project_prefix="tetris"
-project_network="${project_prefix}-network"
+project_network="tetris-network"
+
+# 5 clusters: 3 gameplay + 1 scoring + 1 platform
 cluster_contexts=(
-    "k3d-${project_prefix}-ap-east"
-    "k3d-${project_prefix}-ap-central"
-    "k3d-${project_prefix}-ap-south"
-)
-dashboard_image_tag="dashboard:local"
-dashboard_api_image_tag="dashboard-api:local"
-game_image_tag="game:local"
-game_api_image_tag="game-api:local"
-application_namespace="tetris"
-application_color_map=(
-    "#3b82f6" # blue
-    "#8b5cf6" # purple
-    "#06b6d4" # cyan
+    "k3d-gameplay-east"
+    "k3d-gameplay-west"
+    "k3d-gameplay-central"
+    "k3d-scoring"
+    "k3d-platform"
 )
 
+# Cluster roles (parallel array)
+cluster_roles=(
+    "gameplay"
+    "gameplay"
+    "gameplay"
+    "scoring"
+    "platform"
+)
+
+# Images
+dashboard_image_tag="dashboard:local"
+agent_image_tag="agent:local"
+game_image_tag="game:local"
+game_api_image_tag="game-api:local"
+leaderboard_api_image_tag="leaderboard-api:local"
+
+application_namespace="tetris"
+application_color_map=(
+    "#3b82f6" # blue     — gameplay-east
+    "#8b5cf6" # purple   — gameplay-west
+    "#06b6d4" # cyan     — gameplay-central
+    "#f59e0b" # amber    — scoring
+    "#10b981" # emerald  — platform
+)
+
+# Port mapping per cluster (game LB port, dashboard LB port, API port)
+cluster_game_ports=(8080 8081 8082 8083 0)
+cluster_dash_ports=(0    0    0    0    9090)
+cluster_api_ports=(6550  6551 6552 6553 6554)
+
 echo "============================================"
-echo "  Tetris - k3d Local Clusters Setup"
+echo "  Tetris Rush - k3d 5-Cluster Setup"
 echo "============================================"
 echo ""
 
@@ -77,12 +100,24 @@ fi
 echo "Creating clusters..."
 for i in "${!cluster_contexts[@]}"; do
     context="${cluster_contexts[$i]}"
-    echo "Creating cluster: $context"
-    k3d cluster create "${context#k3d-}" \
+    cluster_name="${context#k3d-}"
+    api_port="${cluster_api_ports[$i]}"
+    game_port="${cluster_game_ports[$i]}"
+    dash_port="${cluster_dash_ports[$i]}"
+
+    port_args=()
+    if [[ "$game_port" -gt 0 ]]; then
+        port_args+=(-p "${game_port}:80@loadbalancer")
+    fi
+    if [[ "$dash_port" -gt 0 ]]; then
+        port_args+=(-p "${dash_port}:8090@loadbalancer")
+    fi
+
+    echo "Creating cluster: $cluster_name"
+    k3d cluster create "$cluster_name" \
         --network "${project_network}" \
-        --api-port "655${i}" \
-        -p "808${i}:80@loadbalancer" \
-        -p "909${i}:8090@loadbalancer" \
+        --api-port "$api_port" \
+        "${port_args[@]}" \
         --k3s-arg "--disable=traefik@server:0" \
         --k3s-arg "--cluster-cidr=10.$((i + 1))0.0.0/16@server:0" \
         --k3s-arg "--service-cidr=10.11${i}.0.0/16@server:0"
@@ -212,53 +247,64 @@ done
 # ============================================================
 
 echo "Building container images"
-docker build -t "$dashboard_image_tag"     -f "$directory_root/dashboard/Dockerfile"          "$directory_root"
-docker build -t "$dashboard_api_image_tag" -f "$directory_root/api/dashboard-api/Dockerfile" "$directory_root"
-docker build -t "$game_image_tag"          -f "$directory_root/tetris/Dockerfile"            "$directory_root"
-docker build -t "$game_api_image_tag"      -f "$directory_root/api/tetris-api/Dockerfile"    "$directory_root"
+docker build -t "$dashboard_image_tag"          -f "$directory_root/dashboard/Dockerfile"              "$directory_root"
+docker build -t "$agent_image_tag"              -f "$directory_root/api/agent/Dockerfile"              "$directory_root"
+docker build -t "$game_image_tag"               -f "$directory_root/tetris/Dockerfile"                 "$directory_root"
+docker build -t "$game_api_image_tag"           -f "$directory_root/api/tetris-api/Dockerfile"         "$directory_root"
+docker build -t "$leaderboard_api_image_tag"    -f "$directory_root/api/leaderboard-api/Dockerfile"    "$directory_root"
 
 echo "Importing images into k3d clusters"
-# Dashboard image only goes to the first cluster
-k3d image import "$dashboard_image_tag" -c "${cluster_contexts[0]#k3d-}"
-echo "Dashboard image imported into ${cluster_contexts[0]}"
+# Import images per cluster role
+for i in "${!cluster_contexts[@]}"; do
+    cluster="${cluster_contexts[$i]}"
+    role="${cluster_roles[$i]}"
+    cluster_name="${cluster#k3d-}"
 
-# Dashboard API and game images go to all clusters
-for cluster in "${cluster_contexts[@]}"; do
-    k3d image import "$dashboard_api_image_tag" -c "${cluster#k3d-}"
-    k3d image import "$game_image_tag"          -c "${cluster#k3d-}"
-    k3d image import "$game_api_image_tag"      -c "${cluster#k3d-}"
-    echo "Images imported into $cluster"
+    case "$role" in
+        gameplay)
+            k3d image import "$game_image_tag"     -c "$cluster_name"
+            k3d image import "$game_api_image_tag"  -c "$cluster_name"
+            k3d image import "$agent_image_tag"     -c "$cluster_name"
+            ;;
+        scoring)
+            k3d image import "$leaderboard_api_image_tag" -c "$cluster_name"
+            ;;
+        platform)
+            k3d image import "$dashboard_image_tag" -c "$cluster_name"
+            k3d image import "$agent_image_tag"     -c "$cluster_name"
+            ;;
+    esac
+    echo "Images imported into $cluster ($role)"
 done
 
-echo "Deploying application with Helm"
-dashboard_cluster_name="${cluster_contexts[0]#k3d-}"
-dashboard_context="${cluster_contexts[0]}"
+# ============================================================
+# Helm Deployments
+# ============================================================
 
-# Deploy the first cluster (dashboard + Redis) first
-echo "Deploying dashboard cluster: $dashboard_cluster_name"
-helm --kube-context="$dashboard_context" upgrade --install tetris "$directory_root/helm/tetris" \
+echo "Deploying application with Helm"
+
+# --- 1) Deploy scoring cluster first (has Redis) ---
+scoring_context="k3d-scoring"
+echo "Deploying scoring cluster..."
+helm --kube-context="$scoring_context" upgrade --install tetris "$directory_root/helm/tetris" \
     --namespace "$application_namespace" --create-namespace \
-    --set "dashboard.enabled=true" \
+    --set "game.enabled=false" \
+    --set "gameApi.enabled=false" \
+    --set "agent.enabled=false" \
+    --set "dashboard.enabled=false" \
+    --set "leaderboardApi.enabled=true" \
     --set "redis.deploy=true" \
     --set "redis.url=redis://redis.${application_namespace}.svc.cluster.local:6379" \
-    --set "dashboard.image.repository=${dashboard_image_tag%:*}" \
-    --set "dashboard.image.tag=${dashboard_image_tag#*:}" \
-    --set "dashboardApi.image.repository=${dashboard_api_image_tag%:*}" \
-    --set "dashboardApi.image.tag=${dashboard_api_image_tag#*:}" \
-    --set "game.image.repository=${game_image_tag%:*}" \
-    --set "game.image.tag=${game_image_tag#*:}" \
-    --set "gameApi.image.repository=${game_api_image_tag%:*}" \
-    --set "gameApi.image.tag=${game_api_image_tag#*:}" \
-    --set "cluster.name=${dashboard_cluster_name}" \
-    --set "cluster.region=${dashboard_cluster_name}" \
-    --set "cluster.color=${application_color_map[0]}" \
-    --set "externalUrl=http://${dashboard_cluster_name}.localhost:8080"
+    --set "cluster.name=scoring" \
+    --set "cluster.region=scoring" \
+    --set "cluster.color=#f59e0b" \
+    --set "externalUrl=http://scoring.localhost:8083"
 
 # Wait for Redis LoadBalancer IP
 echo -n "Waiting for Redis LoadBalancer IP..."
 redis_lb_ip=""
 while true; do
-    redis_lb_ip=$(kubectl --context="$dashboard_context" -n "$application_namespace" get svc redis -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+    redis_lb_ip=$(kubectl --context="$scoring_context" -n "$application_namespace" get svc redis -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
     if [[ -n "$redis_lb_ip" ]]; then
         echo " $redis_lb_ip"
         break
@@ -267,35 +313,54 @@ while true; do
     sleep 3
 done
 
-# Deploy remaining clusters using the Redis LoadBalancer IP
-for i in "${!cluster_contexts[@]}"; do
-    [ "$i" = "0" ] && continue
-    context="${cluster_contexts[$i]}"
-    cluster_name="${context#k3d-}"
+# --- 2) Deploy gameplay clusters ---
+gameplay_contexts=("k3d-gameplay-east" "k3d-gameplay-west" "k3d-gameplay-central")
+gameplay_colors=("#3b82f6" "#8b5cf6" "#06b6d4")
+gameplay_ports=(8080 8081 8082)
 
-    echo "Deploying cluster: $cluster_name"
+for i in "${!gameplay_contexts[@]}"; do
+    context="${gameplay_contexts[$i]}"
+    cluster_name="${context#k3d-}"
+    color="${gameplay_colors[$i]}"
+    port="${gameplay_ports[$i]}"
+
+    echo "Deploying gameplay cluster: $cluster_name"
     helm --kube-context="$context" upgrade --install tetris "$directory_root/helm/tetris" \
         --namespace "$application_namespace" --create-namespace \
+        --set "game.enabled=true" \
+        --set "gameApi.enabled=true" \
+        --set "agent.enabled=true" \
         --set "dashboard.enabled=false" \
+        --set "leaderboardApi.enabled=false" \
         --set "redis.deploy=false" \
         --set "redis.url=redis://${redis_lb_ip}:6379" \
-        --set "dashboard.image.repository=${dashboard_image_tag%:*}" \
-        --set "dashboard.image.tag=${dashboard_image_tag#*:}" \
-        --set "dashboardApi.image.repository=${dashboard_api_image_tag%:*}" \
-        --set "dashboardApi.image.tag=${dashboard_api_image_tag#*:}" \
-        --set "game.image.repository=${game_image_tag%:*}" \
-        --set "game.image.tag=${game_image_tag#*:}" \
-        --set "gameApi.image.repository=${game_api_image_tag%:*}" \
-        --set "gameApi.image.tag=${game_api_image_tag#*:}" \
+        --set "leaderboardApiUrl=http://leaderboard-api-scoring.${application_namespace}.svc.cluster.local" \
         --set "cluster.name=${cluster_name}" \
         --set "cluster.region=${cluster_name}" \
-        --set "cluster.color=${application_color_map[$i]}" \
-        --set "externalUrl=http://${cluster_name}.localhost:$((8080 + i))"
+        --set "cluster.color=${color}" \
+        --set "externalUrl=http://${cluster_name}.localhost:${port}"
 done
+
+# --- 3) Deploy platform cluster ---
+platform_context="k3d-platform"
+echo "Deploying platform cluster..."
+helm --kube-context="$platform_context" upgrade --install tetris "$directory_root/helm/tetris" \
+    --namespace "$application_namespace" --create-namespace \
+    --set "game.enabled=false" \
+    --set "gameApi.enabled=false" \
+    --set "agent.enabled=true" \
+    --set "dashboard.enabled=true" \
+    --set "leaderboardApi.enabled=false" \
+    --set "redis.deploy=false" \
+    --set "redis.url=redis://${redis_lb_ip}:6379" \
+    --set "cluster.name=platform" \
+    --set "cluster.region=platform" \
+    --set "cluster.color=#10b981" \
+    --set "externalUrl=http://platform.localhost:9090"
 
 echo "Waiting for application to be ready in all clusters..."
 for context in "${cluster_contexts[@]}"; do
-    kubectl --context="$context" -n "$application_namespace" rollout restart deploy -n "$application_namespace"
+    kubectl --context="$context" -n "$application_namespace" rollout restart deploy -n "$application_namespace" 2>/dev/null || true
 done
 
 # ============================================================
@@ -307,17 +372,16 @@ echo ""
 echo "All clusters and application deployed successfully!"
 echo ""
 echo "Tetris (players):"
-for i in "${!cluster_contexts[@]}"; do
-    cluster_name="${cluster_contexts[$i]#k3d-}"
-    echo "  http://${cluster_name}.localhost:$((8080 + i))"
+for i in "${!gameplay_contexts[@]}"; do
+    cluster_name="${gameplay_contexts[$i]#k3d-}"
+    echo "  http://${cluster_name}.localhost:${gameplay_ports[$i]}"
 done
 echo ""
 echo "Dashboard (presenter):"
-echo "  http://${dashboard_cluster_name}.localhost:9090"
+echo "  http://platform.localhost:9090"
 echo ""
-echo "Kubernetes Resources (presenter):"
-for i in "${!cluster_contexts[@]}"; do
-    cluster_name="${cluster_contexts[$i]#k3d-}"
-    echo "  watch kubectl --context=${cluster_contexts[$i]} get pods,svc,httproutes,server -A"
+echo "Kubernetes Resources:"
+for context in "${cluster_contexts[@]}"; do
+    echo "  watch kubectl --context=${context} get pods,svc,httproutes,server -A"
 done
 echo "  ======================================"

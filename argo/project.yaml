@@ -12,14 +12,18 @@ spec:
     # Update this to your actual repo URL
     - "https://github.com/YOUR_ORG/linkerd-tetris-rush.git"
   destinations:
-    # ap-east cluster
-    - server: "https://tetris-ap-east:6443"
+    # gameplay clusters
+    - server: "https://gameplay-east:6443"
       namespace: "*"
-    # ap-central cluster
-    - server: "https://tetris-ap-central:6443"
+    - server: "https://gameplay-west:6443"
       namespace: "*"
-    # ap-south cluster
-    - server: "https://tetris-ap-south:6443"
+    - server: "https://gameplay-central:6443"
+      namespace: "*"
+    # scoring cluster
+    - server: "https://scoring:6443"
+      namespace: "*"
+    # platform cluster
+    - server: "https://platform:6443"
       namespace: "*"
   clusterResourceWhitelist:
     - group: "*"

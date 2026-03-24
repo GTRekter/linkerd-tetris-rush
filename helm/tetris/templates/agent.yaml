@@ -1,9 +1,10 @@
-# dashboard-api — deployed on every cluster for k8s scaling.
-# On the dashboard cluster it also serves cluster info, leaderboard, etc.
+# agent — cluster agent for k8s scaling, mode switching, admin controls.
+# Deployed on gameplay and platform clusters.
+{{- if .Values.agent.enabled }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: dashboard-api
+  name: agent
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "tetris.labels" . | nindent 4 }}
@@ -11,7 +12,7 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: game-api-scale
+  name: agent-role
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "tetris.labels" . | nindent 4 }}
@@ -37,48 +38,48 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: game-api-scale
+  name: agent-role
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "tetris.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: game-api-scale
+  name: agent-role
 subjects:
   - kind: ServiceAccount
-    name: dashboard-api
+    name: agent
     namespace: {{ .Release.Namespace }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: dashboard-api
+  name: agent
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "tetris.labels" . | nindent 4 }}
-    app.kubernetes.io/component: dashboard-api
+    app.kubernetes.io/component: agent
 spec:
   replicas: 1
   selector:
     matchLabels:
       {{- include "tetris.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: dashboard-api
+      app.kubernetes.io/component: agent
   template:
     metadata:
       labels:
         {{- include "tetris.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: dashboard-api
+        app.kubernetes.io/component: agent
       {{- if .Values.linkerd.injectPods }}
       annotations:
         linkerd.io/inject: enabled
       {{- end }}
     spec:
-      serviceAccountName: dashboard-api
+      serviceAccountName: agent
       containers:
-        - name: dashboard-api
-          image: "{{ .Values.dashboardApi.image.repository }}:{{ .Values.dashboardApi.image.tag }}"
-          imagePullPolicy: {{ .Values.dashboardApi.image.pullPolicy }}
+        - name: agent
+          image: "{{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}"
+          imagePullPolicy: {{ .Values.agent.image.pullPolicy }}
           ports:
             - containerPort: 80
           env:
@@ -118,11 +119,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: dashboard-api
+  name: agent
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "tetris.labels" . | nindent 4 }}
-    app.kubernetes.io/component: dashboard-api
+    app.kubernetes.io/component: agent
     mirror.linkerd.io/exported: "true"
 spec:
   type: ClusterIP
@@ -133,4 +134,5 @@ spec:
       name: http
   selector:
     {{- include "tetris.selectorLabels" . | nindent 4 }}
-    app.kubernetes.io/component: dashboard-api
+    app.kubernetes.io/component: agent
+{{- end }}

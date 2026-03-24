@@ -10,12 +10,16 @@ spec:
   generators:
     - list:
         elements:
-          - cluster: tetris-ap-east
-            server: "https://tetris-ap-east:6443"
-          - cluster: tetris-ap-central
-            server: "https://tetris-ap-central:6443"
-          - cluster: tetris-ap-south
-            server: "https://tetris-ap-south:6443"
+          - cluster: gameplay-east
+            server: "https://gameplay-east:6443"
+          - cluster: gameplay-west
+            server: "https://gameplay-west:6443"
+          - cluster: gameplay-central
+            server: "https://gameplay-central:6443"
+          - cluster: scoring
+            server: "https://scoring:6443"
+          - cluster: platform
+            server: "https://platform:6443"
   template:
     metadata:
       name: "linkerd-crds-{{ .cluster }}"
