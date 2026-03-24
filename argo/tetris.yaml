@@ -18,7 +18,7 @@ metadata:
 spec:
   project: tetris
   source:
-    repoURL: "https://github.com/YOUR_ORG/linkerd-tetris-rush.git"
+    repoURL: "https://github.com/GTRekter/linkerd-tetris-rush.git"
     targetRevision: main
     path: helm/tetris
     helm:
@@ -63,7 +63,7 @@ metadata:
 spec:
   project: tetris
   source:
-    repoURL: "https://github.com/YOUR_ORG/linkerd-tetris-rush.git"
+    repoURL: "https://github.com/GTRekter/linkerd-tetris-rush.git"
     targetRevision: main
     path: helm/tetris
     helm:
@@ -108,7 +108,7 @@ metadata:
 spec:
   project: tetris
   source:
-    repoURL: "https://github.com/YOUR_ORG/linkerd-tetris-rush.git"
+    repoURL: "https://github.com/GTRekter/linkerd-tetris-rush.git"
     targetRevision: main
     path: helm/tetris
     helm:
@@ -153,7 +153,7 @@ metadata:
 spec:
   project: tetris
   source:
-    repoURL: "https://github.com/YOUR_ORG/linkerd-tetris-rush.git"
+    repoURL: "https://github.com/GTRekter/linkerd-tetris-rush.git"
     targetRevision: main
     path: helm/tetris
     helm:
@@ -197,7 +197,7 @@ metadata:
 spec:
   project: tetris
   source:
-    repoURL: "https://github.com/YOUR_ORG/linkerd-tetris-rush.git"
+    repoURL: "https://github.com/GTRekter/linkerd-tetris-rush.git"
     targetRevision: main
     path: helm/tetris
     helm:

@@ -12,9 +12,11 @@ Every Tetris piece is fetched via a real HTTP request:
 GET /api/next-piece?player_id=...
 ```
 
-This request travels through the Linkerd service mesh. The federated `tetris-api` service aggregates endpoints from all linked clusters, and Linkerd load-balances across them. Each piece that arrives on a player's board carries a cluster badge showing which cluster served it, plus the actual measured latency.
+This request travels through the Linkerd service mesh. The federated `game-api` service aggregates endpoints from all linked gameplay clusters, and Linkerd load-balances across them. Each piece that arrives on a player's board carries a cluster badge showing which gameplay cluster served it, plus the actual measured latency.
 
-When attendees scan the QR code, they hit the dashboard's `/go` endpoint which distributes them across different cluster frontends using round-robin (see [architecture.md](architecture.md) for the full redirect flow). This means different players are initially connected to different clusters, making the multicluster behavior visible even before traffic splitting is demonstrated.
+When attendees scan the QR code, they hit the dashboard's `/go` endpoint which distributes them across different gameplay cluster frontends using round-robin (see [architecture.md](architecture.md) for the full redirect flow). This means different players are initially connected to different clusters, making the multicluster behavior visible even before traffic splitting is demonstrated.
+
+Player registration, scoring, and leaderboard data all flow through a second cross-cluster call path: game-api on each gameplay cluster calls the leaderboard-api on the dedicated scoring cluster. This is a hard dependency — if the scoring cluster is down, joins and score submissions fail with 503.
 
 This is the core metaphor: **a Tetris piece = one API request through the mesh**. Every Linkerd behavior — latency, mTLS, auth denial, failover — shows up directly as a game effect.
 
@@ -28,36 +30,36 @@ For the complete request flow diagrams, Redis data model, and component architec
 
 ### What happens in the cluster
 
-An `HTTPRoute` resource on ap-east distributes `/api/next-piece` requests across three backends:
+An `HTTPRoute` resource on gameplay-east distributes `/api/next-piece` requests across three backends:
 
 ```yaml
 backendRefs:
-  - name: tetris-api                       # local — ap-east
+  - name: game-api                          # local — gameplay-east
     weight: 1
-  - name: tetris-api-vastaya-ap-central    # mirrored from ap-central
+  - name: game-api-gameplay-west            # mirrored from gameplay-west
     weight: 1
-  - name: tetris-api-vastaya-ap-south      # mirrored from ap-south
+  - name: game-api-gameplay-central         # mirrored from gameplay-central
     weight: 1
 ```
 
-The mirrored services (`tetris-api-vastaya-ap-central`, `tetris-api-vastaya-ap-south`) are created automatically by Linkerd's service mirror controller when it detects the appropriate multicluster label on services in the linked clusters.
+The mirrored services (`game-api-gameplay-west`, `game-api-gameplay-central`) are created automatically by Linkerd's service mirror controller when it detects the appropriate multicluster label on services in the linked clusters.
 
 ### What players see
 
-Each piece has a colored badge — blue for ap-east, purple for ap-central, cyan for ap-south. Pieces appear in roughly the same ratio as the configured weights.
+Each piece has a colored badge — blue for gameplay-east, purple for gameplay-west, cyan for gameplay-central. Pieces appear in roughly the same ratio as the configured weights.
 
 ### Demo talking points
 
 - Start with equal weights — attendees immediately see three cluster colors
-- Slide ap-east to 100% — all badges turn blue instantly
+- Slide gameplay-east to 100% — all badges turn blue instantly
 - Slide it back to equal — color distribution rebalances
 - Point out: no application changes, no redeploy; only the `HTTPRoute` resource changed
 
 ### Linkerd features involved
 
 - **Service mirroring** — the mirror controller watches linked clusters and creates local `ClusterIP` services for each exported service
-- **HTTPRoute traffic splitting** — Linkerd's proxy intercepts requests to `tetris-api` and applies the weight distribution defined in the HTTPRoute before forwarding
-- **Multicluster gateways** — traffic to `tetris-api-vastaya-ap-central` exits ap-east via its gateway, crosses the network, and enters ap-central via its gateway
+- **HTTPRoute traffic splitting** — Linkerd's proxy intercepts requests to `game-api` and applies the weight distribution defined in the HTTPRoute before forwarding
+- **Multicluster gateways** — traffic to `game-api-gameplay-west` exits gameplay-east via its gateway, crosses the network, and enters gameplay-west via its gateway
 
 ---
 
@@ -67,7 +69,7 @@ Each piece has a colored badge — blue for ap-east, purple for ap-central, cyan
 
 ### What happens in the cluster
 
-The presenter sets artificial latency (0–3000ms) per cluster via the dashboard slider. When a cluster has latency configured, the backend sleeps for that duration before responding to each `/api/next-piece` request:
+The presenter sets artificial latency (0-3000ms) per gameplay cluster via the dashboard slider. When a cluster has latency configured, the backend sleeps for that duration before responding to each `/api/next-piece` request:
 
 ```python
 if game_state.artificial_latency_ms > 0:
@@ -78,13 +80,13 @@ The cluster card on the dashboard shows a live latency badge.
 
 ### What players see
 
-When a piece request is routed to a high-latency cluster, the player sees a "Fetching piece…" spinner and a visible pause before the piece appears. The piece badge shows the actual measured latency in milliseconds.
+When a piece request is routed to a high-latency cluster, the player sees a "Fetching piece..." spinner and a visible pause before the piece appears. The piece badge shows the actual measured latency in milliseconds.
 
 ### Demo talking points
 
-- Inject 800ms on ap-central — players served by it visibly stall between pieces
+- Inject 800ms on gameplay-west — players served by it visibly stall between pieces
 - Point to the dashboard event log — each piece arrival shows its cluster and latency
-- Inject 2000ms on ap-south while ap-central is at 0 — demonstrate that players hitting different clusters get very different experiences
+- Inject 2000ms on gameplay-central while gameplay-west is at 0 — demonstrate that players hitting different clusters get very different experiences
 - Explain that in production, this latency could come from geographic distance, slow dependencies, or resource contention — Linkerd makes it visible and measurable without instrumentation
 
 ### Linkerd features involved
@@ -102,7 +104,7 @@ When a piece request is routed to a high-latency cluster, the player sees a "Fet
 
 By default, all requests between Linkerd-injected pods are encrypted with mTLS. Certificates are rotated automatically. No application code changes are required.
 
-When the presenter disables mTLS on a cluster from the dashboard, the backend simulates what a network interceptor could do: it randomly replaces the requested piece type with a different one before responding:
+When the presenter disables mTLS on a gameplay cluster from the dashboard, the backend simulates what a network interceptor could do: it randomly replaces the requested piece type with a different one before responding:
 
 ```python
 if not game_state.mtls_enabled:
@@ -129,7 +131,7 @@ Pieces arriving from the cluster with mTLS disabled appear corrupted — the pla
 
 - **Automatic mTLS** — Linkerd injects a proxy sidecar that handles all TLS termination transparently; the application never touches certificates
 - **Identity** — each workload gets a cryptographic identity (SPIFFE-compatible) issued by Linkerd's identity service; the trust anchor installed at cluster setup is the root of this chain
-- **Shared trust anchor** — all three clusters share the same root CA, allowing cross-cluster mTLS without additional configuration
+- **Shared trust anchor** — all five clusters share the same root CA, allowing cross-cluster mTLS without additional configuration
 
 ---
 
@@ -139,7 +141,7 @@ Pieces arriving from the cluster with mTLS disabled appear corrupted — the pla
 
 ### What happens in the cluster
 
-When the presenter enables the auth policy on a cluster, the backend probabilistically rejects 35% of piece requests with HTTP 403:
+When the presenter enables the auth policy on a gameplay cluster, the backend probabilistically rejects 35% of piece requests with HTTP 403:
 
 ```python
 if game_state.active_scenario == "auth-policy" and game_state.auth_policy_enabled:
@@ -158,7 +160,7 @@ The piece feed on the player's board shows "DENIED" entries for rejected request
 
 ### Demo talking points
 
-- Enable auth policy on one cluster: "I've now applied an AuthorizationPolicy that restricts which workloads can call this cluster's piece service."
+- Enable auth policy on one gameplay cluster: "I've now applied an AuthorizationPolicy that restricts which workloads can call this cluster's piece service."
 - Watch the event log fill with "DENIED": "Linkerd is enforcing this at the proxy level, before the request ever reaches the application."
 - Point out the game continues: "Linkerd retries the denied request on an authorized cluster. Players don't notice."
 - "Without a service mesh, you'd have to implement this logic in every service. With Linkerd it's a Kubernetes resource."
@@ -177,29 +179,20 @@ The piece feed on the player's board shows "DENIED" entries for rejected request
 
 ### What happens in the cluster
 
-The presenter clicks "Kill" on a cluster card. This flips the cluster's health state to `false`. The health endpoint immediately returns 503:
+The presenter clicks "Kill" on a gameplay cluster card. This scales the game-api deployment down to 0 replicas. The killed services referenced in the `HTTPRoute` will be processed by the proxy. Because they have no endpoints, it zeros out the weight for that backend and tries the next one.
 
-```python
-@app.get("/api/health")
-async def health():
-    if not game_state.healthy:
-        raise HTTPException(status_code=503, detail="cluster_down")
-```
-
-Linkerd's health probing detects the failing endpoint and stops routing new requests to it. The `TrafficSplit` weights are re-distributed across the remaining healthy backends.
-
-Clicking "Revive" restores the cluster. Linkerd detects the health probe succeeding again and gradually re-includes the cluster in the traffic split.
+Clicking "Revive" scales the game-api back up to 1. Linkerd detects endpoints returning and gradually re-includes the cluster in traffic routing.
 
 ### What players see
 
-The dashboard cluster card goes red with a "DOWN — failover!" event in the log. Traffic flow animation stops showing requests going to that cluster. **Player games continue uninterrupted** — their next piece arrives from one of the healthy clusters, just with a different badge color.
+The dashboard cluster card goes red with a "DOWN — failover!" event in the log. Traffic flow animation stops showing requests going to that cluster. **Player games continue uninterrupted** — their next piece arrives from one of the healthy gameplay clusters, just with a different badge color.
 
 ### Demo talking points
 
-- "Right now pieces are flowing to all three clusters." Kill ap-south mid-game.
-- "ap-south is down. Watch the dashboard — traffic automatically reroutes to ap-east and ap-central."
-- "Every player who was being served by ap-south just got their next piece from a different cluster. Did anyone's game stop? No."
-- Revive: "ap-south is back. Linkerd detects the health check passing and starts routing to it again."
+- "Right now pieces are flowing to all three gameplay clusters." Kill gameplay-west mid-game.
+- "gameplay-west is down. Watch the dashboard — traffic automatically reroutes to gameplay-east and gameplay-central."
+- "Every player who was being served by gameplay-west just got their next piece from a different cluster. Did anyone's game stop? No."
+- Revive: "gameplay-west is back. Linkerd detects the endpoints returning and starts routing to it again."
 - "This is failover at the mesh layer, not at the application layer. No circuit breaker code, no retry logic in the app."
 
 ### Linkerd features involved
@@ -228,19 +221,19 @@ curl -X POST http://localhost:8000/api/admin/toggle-egress \
 
 ## Multicluster modes
 
-The dashboard exposes three multicluster modes — **Federated**, **Mirrored**, and **Gateway** — switchable at runtime. Each mode changes the `tetris-api` Service label and reconfigures the HTTPRoute that controls cross-cluster traffic routing.
+The dashboard exposes three multicluster modes — **Federated**, **Mirrored**, and **Gateway** — switchable at runtime. Each mode changes the `game-api` Service label and reconfigures the HTTPRoute that controls cross-cluster traffic routing.
 
-In all three modes, the `tetris-frontend` proxy targets `tetris-api`. An HTTPRoute attached to `tetris-api` determines where traffic actually goes.
+In all three modes, the `game` proxy targets `game-api`. An HTTPRoute attached to `game-api` determines where traffic actually goes.
 
 ### Federated
 
 **Service label:** `mirror.linkerd.io/federated: member`
 
-Linkerd creates a virtual `tetris-api-federated` service that aggregates endpoints from all linked clusters. The HTTPRoute routes `tetris-api` → `tetris-api-federated`:
+Linkerd creates a virtual `game-api-federated` service that aggregates endpoints from all linked gameplay clusters. The HTTPRoute routes `game-api` -> `game-api-federated`:
 
 ```yaml
 backendRefs:
-  - name: tetris-api-federated
+  - name: game-api-federated
     weight: 1
 ```
 
@@ -250,15 +243,15 @@ This is the simplest mode — Linkerd handles everything automatically.
 
 **Service label:** `mirror.linkerd.io/remote-discovery: member`
 
-Linkerd mirrors `tetris-api` into linked clusters. Traffic flows **pod-to-pod** directly, without going through multicluster gateways. The HTTPRoute splits equally across local and mirrored backends:
+Linkerd mirrors `game-api` into linked clusters. Traffic flows **pod-to-pod** directly, without going through multicluster gateways. The HTTPRoute splits equally across local and mirrored backends:
 
 ```yaml
 backendRefs:
-  - name: tetris-api                       # local
+  - name: game-api                          # local
     weight: 1
-  - name: tetris-api-vastaya-ap-central    # mirrored
+  - name: game-api-gameplay-west            # mirrored
     weight: 1
-  - name: tetris-api-vastaya-ap-south      # mirrored
+  - name: game-api-gameplay-central         # mirrored
     weight: 1
 ```
 
@@ -266,15 +259,15 @@ backendRefs:
 
 **Service label:** `mirror.linkerd.io/exported: "true"`
 
-Linkerd mirrors `tetris-api` into linked clusters. Traffic flows **through the multicluster gateways**. The HTTPRoute splits equally across local and mirrored backends (same shape as Mirrored):
+Linkerd mirrors `game-api` into linked clusters. Traffic flows **through the multicluster gateways**. The HTTPRoute splits equally across local and mirrored backends (same shape as Mirrored):
 
 ```yaml
 backendRefs:
-  - name: tetris-api                       # local
+  - name: game-api                          # local
     weight: 1
-  - name: tetris-api-vastaya-ap-central    # mirrored
+  - name: game-api-gameplay-west            # mirrored
     weight: 1
-  - name: tetris-api-vastaya-ap-south      # mirrored
+  - name: game-api-gameplay-central         # mirrored
     weight: 1
 ```
 
@@ -283,16 +276,16 @@ backendRefs:
 Click the mode button on the dashboard, or call the API directly:
 
 ```bash
-curl -X POST http://localhost:8090/api/admin/set-mode \
+curl -X POST http://platform.localhost:9090/api/admin/set-mode \
   -H 'Content-Type: application/json' \
   -d '{"token": "demo-admin-2024", "mode": "gateway"}'
 ```
 
-The agent patches the `tetris-api` Service labels and updates the HTTPRoute backends via the Kubernetes API. The change takes effect immediately — no pod restart required.
+The agent patches the `game-api` Service labels and updates the HTTPRoute backends via the Kubernetes API. The change takes effect immediately — no pod restart required.
 
 ### Demo talking points
 
-- Start in **Federated**: "Linkerd aggregates endpoints from all clusters into one virtual service — zero configuration."
+- Start in **Federated**: "Linkerd aggregates endpoints from all gameplay clusters into one virtual service — zero configuration."
 - Switch to **Mirrored**: "Now we're using remote discovery. Traffic goes pod-to-pod across clusters, no gateway in the path. The HTTPRoute gives us explicit control over the split."
 - Switch to **Gateway**: "Same HTTPRoute, but now traffic flows through the multicluster gateways. This is the model you'd use when clusters can't reach each other directly."
 
@@ -305,7 +298,7 @@ service:
   mode: federated   # federated | mirrored | gateway
 ```
 
-Mirrored backend names (e.g., `tetris-api-vastaya-ap-central`, `tetris-api-vastaya-ap-south`) are discovered dynamically by the agent at runtime via Linkerd's service mirror controller — no static backend list is needed in the Helm values.
+Mirrored backend names (e.g., `game-api-gameplay-west`, `game-api-gameplay-central`) are discovered dynamically by the agent at runtime via Linkerd's service mirror controller — no static backend list is needed in the Helm values.
 
 ---
 

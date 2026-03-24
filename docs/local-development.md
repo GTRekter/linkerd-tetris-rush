@@ -8,8 +8,8 @@ This guide covers running Tetris Rush locally without Kubernetes for frontend an
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| Python | 3.12+ | tetris-api backend |
-| Node.js | 20+ | Frontend dev servers and agent |
+| Python | 3.12+ | game-api backend |
+| Node.js | 20+ | Frontend dev servers, agent, and leaderboard-api |
 | Yarn | 1.x | Frontend dependency management |
 | Docker | Any | Redis container |
 
@@ -46,7 +46,7 @@ Prompts you to choose:
 | Service | URL |
 |---------|-----|
 | React dev server (hot reload) | `http://localhost:3000` |
-| tetris-api backend | `http://localhost:8000` |
+| game-api backend | `http://localhost:8000` |
 
 ### Dashboard Frontend
 
@@ -57,7 +57,7 @@ Prompts you to choose:
 | Service | URL |
 |---------|-----|
 | React dev server (hot reload) | `http://localhost:3000` |
-| tetris-api backend | `http://localhost:8000` |
+| game-api backend | `http://localhost:8000` |
 
 ### Multi-Cluster Simulation
 
@@ -65,13 +65,13 @@ Prompts you to choose:
 ./scripts/local-dev.sh --multi
 ```
 
-Runs three tetris-api instances simulating different clusters:
+Runs three game-api instances simulating different gameplay clusters:
 
 | Cluster | URL | Color |
 |---------|-----|-------|
-| us-east | `http://localhost:8001` | Blue (`#3b82f6`) |
-| eu-west | `http://localhost:8002` | Purple (`#8b5cf6`) |
-| ap-south | `http://localhost:8003` | Cyan (`#06b6d4`) |
+| gameplay-east | `http://localhost:8001` | Blue (`#3b82f6`) |
+| gameplay-west | `http://localhost:8002` | Purple (`#8b5cf6`) |
+| gameplay-central | `http://localhost:8003` | Cyan (`#06b6d4`) |
 
 This mode is backend-only — no React dev server. Useful for testing multi-cluster piece distribution and admin API calls.
 
@@ -86,7 +86,7 @@ Builds the production Docker image and runs it locally:
 | Service | URL |
 |---------|-----|
 | Tetris UI | `http://localhost:8080` |
-| tetris-api | `http://localhost:8000` |
+| game-api | `http://localhost:8000` |
 
 ---
 
@@ -100,17 +100,27 @@ If you prefer to run components individually:
 docker run -d --name tetris-redis -p 6379:6379 redis:alpine
 ```
 
-### 2. Start tetris-api
+### 2. Start leaderboard-api
+
+```bash
+cd api/leaderboard-api
+npm install
+REDIS_URL=redis://localhost:6379 node index.js
+```
+
+The leaderboard-api starts on port 3001 by default.
+
+### 3. Start game-api
 
 ```bash
 cd api/tetris-api
 python3 -m venv ../../.venv
 source ../../.venv/bin/activate
 pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+LEADERBOARD_API_URL=http://localhost:3001 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 3. Start a frontend dev server
+### 4. Start a frontend dev server
 
 For the Tetris game:
 
@@ -130,14 +140,14 @@ yarn start
 
 Both React apps start on port 3000 with hot reload.
 
-### 4. Start agent (optional)
+### 5. Start agent (optional)
 
 Only needed if you're working on the dashboard and need cluster info, scaling, or admin endpoints:
 
 ```bash
 cd api/agent
 npm install
-node index.js
+LEADERBOARD_API_URL=http://localhost:3001 node index.js
 ```
 
 ---
@@ -154,6 +164,7 @@ Override these to customize local behavior:
 | `EXTERNAL_URL` | `http://localhost:8000` | Public URL for QR code generation |
 | `ADMIN_TOKEN` | `demo-admin-2024` | Token for admin API calls |
 | `REDIS_URL` | `redis://localhost:6379` | Redis connection string |
+| `LEADERBOARD_API_URL` | _(none)_ | URL of leaderboard-api (required for game-api to handle joins/scores) |
 
 ---
 
@@ -195,6 +206,18 @@ curl -X POST http://localhost:8000/api/admin/toggle-mtls \
 curl http://localhost:8000/api/leaderboard
 ```
 
+### Test leaderboard-api directly
+
+```bash
+# Join
+curl -X POST http://localhost:3001/api/join \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "TestPlayer"}'
+
+# Leaderboard
+curl http://localhost:3001/api/leaderboard
+```
+
 ---
 
 ## Project Structure for Development
@@ -218,7 +241,10 @@ dashboard/client/src/
 ├── pages/
 │   └── DashboardPage.js  # Main presenter dashboard
 └── services/
-    └── agent.js   # API client for agent
+    └── agentApi.js       # API client for agent
+
+api/leaderboard-api/
+└── index.js              # Express server: join, score, leaderboard
 ```
 
 ---
@@ -249,4 +275,10 @@ The `--reload` flag on uvicorn enables auto-restart on file changes. Logs are pr
 
 ### Frontend proxy issues
 
-The React dev server proxies `/api/*` requests to the backend. If you see CORS errors, ensure the backend is running on the expected port (8000 by default). The tetris-api has CORS set to allow all origins in development.
+The React dev server proxies `/api/*` requests to the backend. If you see CORS errors, ensure the backend is running on the expected port (8000 by default). The game-api has CORS set to allow all origins in development.
+
+### Leaderboard-api connection issues
+
+If game-api returns 503 with `"leaderboard_api_unavailable"`, check that:
+1. The leaderboard-api is running (`http://localhost:3001/api/health`)
+2. The `LEADERBOARD_API_URL` environment variable is set correctly on the game-api

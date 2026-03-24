@@ -40,15 +40,17 @@ This single script performs all the steps described below. The rest of this docu
 
 ### 1. Create K3d Clusters
 
-Three clusters are created on a shared Docker network (`vastaya-network`):
+Five clusters are created on a shared Docker network (`tetris-network`), organized by domain:
 
-| Cluster | API Port | HTTP Port | Dashboard Port |
-|---------|----------|-----------|----------------|
-| `vastaya-ap-east` | 6550 | 8080 | 9090 |
-| `vastaya-ap-central` | 6551 | 8081 | 9091 |
-| `vastaya-ap-south` | 6552 | 8082 | 9092 |
+| Cluster | Role | API Port | Game Port | Dashboard Port | Color |
+|---------|------|----------|-----------|----------------|-------|
+| `gameplay-east` | Gameplay | 6550 | 8080 | — | Blue (#3b82f6) |
+| `gameplay-west` | Gameplay | 6551 | 8081 | — | Purple (#8b5cf6) |
+| `gameplay-central` | Gameplay | 6552 | 8082 | — | Cyan (#06b6d4) |
+| `scoring` | Scoring | 6553 | — | — | Amber (#f59e0b) |
+| `platform` | Operations | 6554 | — | 9090 | Emerald (#10b981) |
 
-Each cluster uses a unique pod CIDR (`10.10.0.0/16`, `10.20.0.0/16`, `10.30.0.0/16`) and service CIDR (`10.110.0.0/16`, `10.111.0.0/16`, `10.112.0.0/16`) to avoid conflicts. Traefik is disabled since Linkerd handles ingress.
+Each cluster uses a unique pod CIDR (`10.10.0.0/16` through `10.50.0.0/16`) and service CIDR (`10.110.0.0/16` through `10.114.0.0/16`) to avoid conflicts. Traefik is disabled since Linkerd handles ingress.
 
 Any existing k3d clusters are deleted before creation.
 
@@ -67,7 +69,7 @@ root.linkerd.cluster.local (root CA)
   └── identity.linkerd.cluster.local (intermediate CA, 8760h TTL)
 ```
 
-All three clusters share the same root CA, enabling cross-cluster mTLS without additional configuration.
+All five clusters share the same root CA, enabling cross-cluster mTLS without additional configuration.
 
 For each cluster, the script installs:
 1. Gateway API CRDs (v1.2.1)
@@ -78,7 +80,7 @@ For each cluster, the script installs:
 
 Each cluster gets the multicluster extension with:
 - A gateway (for gateway-mode traffic routing)
-- Service mirror controllers pointing to the other two clusters
+- Service mirror controllers pointing to the other four clusters
 
 The script then links all clusters bidirectionally using `linkerd multicluster link-gen`, which:
 - Creates a service account and RBAC in the source cluster
@@ -87,30 +89,69 @@ The script then links all clusters bidirectionally using `linkerd multicluster l
 
 ### 5. Build and Import Container Images
 
-Four container images are built from the repo:
+Five container images are built from the repo:
 
-| Image | Dockerfile | Clusters |
-|-------|-----------|----------|
-| `dashboard:local` | `dashboard/Dockerfile` | ap-east only |
-| `agent:local` | `api/agent/Dockerfile` | All |
-| `tetris:local` | `tetris/Dockerfile` | All |
-| `tetris-api:local` | `api/tetris-api/Dockerfile` | All |
+| Image | Dockerfile | Imported To |
+|-------|-----------|-------------|
+| `dashboard:local` | `dashboard/Dockerfile` | platform |
+| `agent:local` | `api/agent/Dockerfile` | gameplay-*, platform |
+| `game:local` | `tetris/Dockerfile` | gameplay-* |
+| `game-api:local` | `api/tetris-api/Dockerfile` | gameplay-* |
+| `leaderboard-api:local` | `api/leaderboard-api/Dockerfile` | scoring |
 
-Images are imported into the appropriate k3d clusters using `k3d image import`.
+Images are imported only into clusters that need them using `k3d image import`.
 
 ### 6. Deploy with Helm
 
-The Helm chart at `helm/tetris/` is deployed to each cluster with per-cluster overrides:
+The Helm chart at `helm/tetris/` is deployed to each cluster in three phases:
 
-**ap-east (dashboard cluster):**
-- `dashboard.enabled=true` — deploys the presenter dashboard
+**Phase 1 — Scoring cluster (first):**
+- `leaderboardApi.enabled=true` — deploys the leaderboard-api
 - `redis.deploy=true` — deploys the shared Redis instance
-- Color: `#3b82f6` (blue)
+- Waits for Redis LoadBalancer IP before proceeding
 
-**ap-central and ap-south:**
-- `dashboard.enabled=false` — no dashboard frontend
-- `redis.deploy=false` — connects to ap-east's Redis via LoadBalancer IP
-- Colors: `#8b5cf6` (purple) and `#06b6d4` (cyan)
+**Phase 2 — Gameplay clusters (3x):**
+- `game.enabled=true`, `gameApi.enabled=true`, `agent.enabled=true`
+- `leaderboardApiUrl` set to the scoring cluster's leaderboard-api via Linkerd multicluster DNS
+- `redis.url` set to the scoring cluster's Redis LoadBalancer IP
+- Colors: blue, purple, cyan
+
+**Phase 3 — Platform cluster (last):**
+- `dashboard.enabled=true`, `agent.enabled=true`
+- `redis.url` set to the scoring cluster's Redis LoadBalancer IP
+
+### Alternative: Argo CD Deployment
+
+Instead of direct Helm installs, you can deploy the entire stack via Argo CD:
+
+```bash
+export BUOYANT_LICENSE="your-license-key"
+./scripts/k3d.sh --argocd
+```
+
+When the `--argocd` flag is passed:
+
+1. **Argo CD is installed** on the platform cluster (namespace `argocd`)
+2. **Remote clusters are registered** — ServiceAccount tokens are generated for each cluster and stored as Argo CD cluster Secrets
+3. **Linkerd identity certificates** are pre-applied to all clusters
+4. **Argo CD manifests from `argo/`** are applied — the AppProject, ApplicationSets, and Applications handle the full deployment via sync waves:
+   - Wave 0: Gateway API CRDs (all clusters)
+   - Wave 1: Linkerd CRDs (all clusters)
+   - Wave 2: Linkerd control plane (all clusters)
+   - Wave 3: Linkerd multicluster (all clusters)
+   - Wave 4: Tetris applications (per-cluster values)
+5. **Direct Helm installs are skipped** — Argo CD manages everything
+
+The Argo CD UI is exposed at `https://platform.localhost:9091`.
+
+**Getting the Argo CD admin password:**
+
+```bash
+kubectl --context k3d-platform -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath='{.data.password}' | base64 -d
+```
+
+**Note:** Multicluster Link resources cannot be statically committed to Git (they contain dynamic gateway IPs). The `k3d.sh` script generates and applies these after cluster creation regardless of the deployment mode. See `argo/linkerd-multicluster-link.yaml` for the generation script.
 
 ---
 
@@ -118,10 +159,11 @@ The Helm chart at `helm/tetris/` is deployed to each cluster with per-cluster ov
 
 | Endpoint | URL | Description |
 |----------|-----|-------------|
-| Player (ap-east) | `http://ap-east.localhost:8080` | Tetris game |
-| Player (ap-central) | `http://ap-central.localhost:8081` | Tetris game |
-| Player (ap-south) | `http://ap-south.localhost:8082` | Tetris game |
-| Presenter Dashboard | `http://ap-east.localhost:9090` | Admin dashboard |
+| Player (gameplay-east) | `http://gameplay-east.localhost:8080` | Tetris game |
+| Player (gameplay-west) | `http://gameplay-west.localhost:8081` | Tetris game |
+| Player (gameplay-central) | `http://gameplay-central.localhost:8082` | Tetris game |
+| Presenter Dashboard | `http://platform.localhost:9090` | Admin dashboard |
+| Argo CD | `https://platform.localhost:9091` | GitOps UI (`--argocd` mode only) |
 
 ---
 
@@ -130,16 +172,25 @@ The Helm chart at `helm/tetris/` is deployed to each cluster with per-cluster ov
 Check that all pods are running:
 
 ```bash
-kubectl get pods,svc,httproute,server -n vastaya --context k3d-vastaya-ap-east
-kubectl get pods,svc,httproute,server -n vastaya --context k3d-vastaya-ap-central
-kubectl get pods,svc,httproute,server -n vastaya --context k3d-vastaya-ap-south
+kubectl get pods,svc,httproute,server -n tetris --context k3d-gameplay-east
+kubectl get pods,svc,httproute,server -n tetris --context k3d-gameplay-west
+kubectl get pods,svc,httproute,server -n tetris --context k3d-gameplay-central
+kubectl get pods,svc,httproute,server -n tetris --context k3d-scoring
+kubectl get pods,svc,httproute,server -n tetris --context k3d-platform
 ```
 
 Verify Linkerd multicluster links:
 
 ```bash
-linkerd --context k3d-vastaya-ap-east multicluster check
-linkerd --context k3d-vastaya-ap-east multicluster gateways
+linkerd --context k3d-gameplay-east multicluster check
+linkerd --context k3d-gameplay-east multicluster gateways
+```
+
+Verify cross-cluster leaderboard-api access:
+
+```bash
+# From a gameplay cluster, check the mirrored service exists
+kubectl --context k3d-gameplay-east -n tetris get svc leaderboard-api-scoring
 ```
 
 ---
@@ -148,7 +199,7 @@ linkerd --context k3d-vastaya-ap-east multicluster gateways
 
 ### Clusters fail to create
 
-If k3d cluster creation fails, ensure Docker is running and has enough resources allocated (at least 8GB RAM recommended for three clusters).
+If k3d cluster creation fails, ensure Docker is running and has enough resources allocated (at least 12GB RAM recommended for five clusters).
 
 ### Linkerd gateway has no external IP
 
@@ -158,18 +209,32 @@ The script waits for each gateway's LoadBalancer IP. If it hangs, check that the
 docker ps | grep k3d
 ```
 
-### Redis is unreachable from non-dashboard clusters
+### Redis is unreachable from non-scoring clusters
 
 Verify the Redis LoadBalancer IP is accessible:
 
 ```bash
-kubectl --context k3d-vastaya-ap-east -n vastaya get svc redis -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+kubectl --context k3d-scoring -n tetris get svc redis -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
 ```
 
 Then test connectivity from another cluster:
 
 ```bash
-kubectl --context k3d-vastaya-ap-central run redis-test --rm -it --image=redis:alpine -- redis-cli -h <REDIS_IP> ping
+kubectl --context k3d-gameplay-east run redis-test --rm -it --image=redis:alpine -- redis-cli -h <REDIS_IP> ping
+```
+
+### Leaderboard-api is unreachable from gameplay clusters
+
+Verify the mirrored service exists:
+
+```bash
+kubectl --context k3d-gameplay-east -n tetris get svc leaderboard-api-scoring
+```
+
+If missing, check that the Linkerd multicluster link to the scoring cluster is healthy:
+
+```bash
+linkerd --context k3d-gameplay-east multicluster check
 ```
 
 ### Cross-cluster routing not working
@@ -177,7 +242,7 @@ kubectl --context k3d-vastaya-ap-central run redis-test --rm -it --image=redis:a
 Verify the node-level routes are in place:
 
 ```bash
-docker exec k3d-vastaya-ap-east-server-0 ip route
+docker exec k3d-gameplay-east-server-0 ip route
 ```
 
 You should see routes for the other clusters' pod CIDRs.
@@ -189,11 +254,11 @@ You should see routes for the other clusters' pod CIDRs.
 Delete all clusters:
 
 ```bash
-k3d cluster delete vastaya-ap-east vastaya-ap-central vastaya-ap-south
+k3d cluster delete gameplay-east gameplay-west gameplay-central scoring platform
 ```
 
 Remove the shared Docker network:
 
 ```bash
-docker network rm vastaya-network
+docker network rm tetris-network
 ```

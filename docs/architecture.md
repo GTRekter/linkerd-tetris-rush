@@ -6,53 +6,65 @@ This document describes the system architecture, component interactions, request
 
 ## High-Level Overview
 
-Tetris Rush is a four-component system deployed across multiple Kubernetes clusters, connected by Linkerd's multicluster service mesh. A shared Redis instance provides cross-cluster state synchronization.
+Tetris Rush is a six-component system deployed across five domain-based Kubernetes clusters, connected by Linkerd's multicluster service mesh. A shared Redis instance on the scoring cluster provides cross-cluster state synchronization.
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Dashboard Cluster                            │
-│                                                                     │
-│  ┌────────────────────┐     ┌──────────────────┐                    │
-│  │ dashboard-frontend │────▶│  agent   │                    │
-│  │ (React + Express)  │     │  (Node/Express)  │                    │
-│  └────────────────────┘     └────────┬─────────┘                    │
-│         ▲ presenter                  │                              │
-│         │ browser                    │ reads/writes                 │
-│                                      ▼                              │
-│                              ┌──────────┐                           │
-│                              │  Redis   │◀── shared by all clusters │
-│                              └──────────┘                           │
-└─────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│                      k3d-platform                                  │
+│                                                                    │
+│  ┌────────────────────┐     ┌──────────────────┐                   │
+│  │   dashboard        │────▶│      agent       │                   │
+│  │ (React + Express)  │     │ (Node/Express)   │                   │
+│  └────────────────────┘     └────────┬─────────┘                   │
+│         ▲ presenter                  │                             │
+│         │ browser                    │ reads Redis, proxies to     │
+│                                      │ gameplay agents via mesh    │
+│                                      ▼                             │
+│                         leaderboard-api-scoring                    │
+│                         (cross-cluster via mesh)                   │
+└────────────────────────────────────────────────────────────────────┘
 
-┌──────────────────────────────────┐  ┌────────────────────────────────┐
-│        Cluster: ap-central       │  │       Cluster: ap-south        │
-│                                  │  │                                │
-│ ┌────────────────┐ ┌────────────┐│  │┌────────────────┐ ┌───────────┐│
-│ │tetris-frontend ├▶│ tetris-api ││  ││tetris-frontend ├▶│tetris-api ││
-│ │(React+Express) │ │ (FastAPI)  ││  ││(React+Express) │ │(FastAPI)  ││
-│ └────────────────┘ └────────────┘│  │└────────────────┘ └───────────┘│
-│        ▲ player phone            │  │                                │
-│        │ via QR                  │  │                                │
-│ ┌─────────────┐                  │  │ ┌─────────────┐                │
-│ │agent│ (for k8s scale)  │  │ │agent│                │
-│ └─────────────┘                  │  │ └─────────────┘                │
-└──────────────────────────────────┘  └────────────────────────────────┘
+┌────────────────────────┐  ┌─────────────────────┐  ┌──────────────────────────┐
+│   k3d-gameplay-east    │  │  k3d-gameplay-west  │  │  k3d-gameplay-central    │
+│                        │  │                     │  │                          │
+│ ┌──────────┐ ┌───────┐│  │┌──────────┐┌──────┐│  │┌──────────┐ ┌───────────┐│
+│ │   game   ├▶│game-  ││  ││   game   ├▶│game- ││  ││   game   ├▶│  game-    ││
+│ │(React+   │ │ api   ││  ││(React+   │ │ api  ││  ││(React+   │ │   api     ││
+│ │Express)  │ │(Fast  ││  ││Express)  │ │(Fast ││  ││Express)  │ │ (FastAPI) ││
+│ └──────────┘ │ API)  ││  │└──────────┘ │ API) ││  │└──────────┘ └───────────┘│
+│              └───┬───┘│  │             └──┬───┘│  │                          │
+│  ┌───────────┐   │    │  │ ┌───────────┐  │   │  │ ┌───────────┐            │
+│  │   agent   │   │    │  │ │   agent   │  │   │  │ │   agent   │            │
+│  └───────────┘   │    │  │ └───────────┘  │   │  │ └───────────┘            │
+│                  ▼    │  │                ▼   │  │                          │
+│  leaderboard-api ──►  │  │ leaderboard-api►  │  │  leaderboard-api ──►     │
+│  scoring cluster      │  │ scoring cluster   │  │  scoring cluster         │
+└────────────────────────┘  └─────────────────────┘  └──────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────┐
+│                       k3d-scoring                                  │
+│                                                                    │
+│  ┌────────────────────┐     ┌──────────┐                           │
+│  │  leaderboard-api   │◄───▶│  Redis   │◀── shared by all clusters│
+│  │  (Node/Express)    │     │          │                           │
+│  └────────────────────┘     └──────────┘                           │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## Components
 
-### 1. tetris-api (Python / FastAPI)
+### 1. game-api (Python / FastAPI)
 
-The game backend. Each cluster runs its own instance(s).
+The game backend. Each gameplay cluster runs its own instance(s). Delegates all player/score operations to the leaderboard-api on the scoring cluster.
 
 | Responsibility | Details |
 |---|---|
 | Piece generation | `GET /api/next-piece` — selects a random piece, applies scenario effects (mTLS corruption, auth denial, latency) |
-| Player management | `POST /api/join` — registers a player; tracks score, lines, level, clusters served |
-| Scoring | `POST /api/score` — updates score based on lines cleared and level |
-| Leaderboard | `GET /api/leaderboard` — top 20 players by score |
+| Player management | `POST /api/join` — proxies to leaderboard-api for registration |
+| Scoring | `POST /api/score` — proxies to leaderboard-api for score updates |
+| Leaderboard | `GET /api/leaderboard` — proxies to leaderboard-api |
 | QR code | `GET /api/qr` — SVG QR code pointing to the dashboard's `/go` redirect |
 | Admin controls | `POST /api/admin/*` — toggle health, latency, mTLS, auth policy, egress, weights, reset |
 | Health | `GET /api/health` — returns 503 when the cluster is "killed" |
@@ -60,23 +72,39 @@ The game backend. Each cluster runs its own instance(s).
 
 **Source:** `api/tetris-api/main.py`
 
-### 2. tetris-frontend (Node / Express + React)
+### 2. game (Node / Express + React)
 
-The player-facing UI. Serves the React game and proxies API calls to tetris-api through the mesh.
+The player-facing UI. Serves the React game and proxies API calls to game-api through the mesh.
 
 | Responsibility | Details |
 |---|---|
 | Static serving | Serves the React production build |
-| API proxy | Proxies `/api/*` to `tetris-api-federated` via Linkerd |
+| API proxy | Proxies `/api/*` to `game-api-federated` via Linkerd |
 | SPA fallback | All non-API routes serve `index.html` |
 
-The proxy target `tetris-api-federated` is a Linkerd federated service that aggregates endpoints from all clusters, enabling cross-cluster load balancing transparently.
+The proxy target `game-api-federated` is a Linkerd federated service that aggregates endpoints from all gameplay clusters, enabling cross-cluster load balancing transparently.
 
 **Source:** `tetris/server/index.js` (server), `tetris/client/src/` (React app)
 
-### 3. agent (Node / Express)
+### 3. leaderboard-api (Node / Express)
 
-The admin and aggregation backend. Deployed on every cluster for Kubernetes scaling operations; the dashboard cluster instance also serves cluster info, leaderboard, and the QR redirect.
+The scoring microservice. Deployed only on the scoring cluster. Owns all player registration, score persistence, and leaderboard queries.
+
+| Responsibility | Details |
+|---|---|
+| Player registration | `POST /api/join` — creates player in Redis, returns player_id |
+| Score submission | `POST /api/score` — updates score based on lines cleared and level |
+| Leaderboard | `GET /api/leaderboard` — top 20 players by score |
+| Admin reset | `POST /api/admin/reset` — clears all player and game data |
+| Health | `GET /api/health` — returns 200 when healthy |
+
+The leaderboard-api is exported via Linkerd multicluster (`mirror.linkerd.io/exported: "true"`) so that game-api instances on gameplay clusters can reach it as `leaderboard-api-scoring.tetris.svc.cluster.local`.
+
+**Source:** `api/leaderboard-api/`
+
+### 4. agent (Node / Express)
+
+The admin and aggregation backend. Deployed on gameplay and platform clusters for Kubernetes scaling operations; the platform cluster instance also serves cluster info, leaderboard, and the QR redirect.
 
 | Responsibility | Details |
 |---|---|
@@ -87,11 +115,12 @@ The admin and aggregation backend. Deployed on every cluster for Kubernetes scal
 | Admin controls | `POST /api/admin/*` — writes scenario toggles to Redis for any cluster |
 | Kubernetes scaling | `POST /admin/scale-down`, `/admin/scale-up` — patches Deployment replicas via the k8s API |
 | Remote scaling | Proxies scale requests to other clusters via Linkerd-mirrored `agent-{cluster}` services |
+| Leaderboard proxy | Fetches leaderboard from leaderboard-api on the scoring cluster |
 | Event log | Maintains a per-cluster capped event log in Redis |
 
 **Source:** `api/agent/index.js`
 
-### 4. dashboard-frontend (Node / Express + React)
+### 5. dashboard (Node / Express + React)
 
 The presenter-facing UI. Shows real-time traffic visualization, cluster cards, leaderboard, and the QR code.
 
@@ -105,6 +134,10 @@ The presenter-facing UI. Shows real-time traffic visualization, cluster cards, l
 
 **Source:** `dashboard/server/index.js` (server), `dashboard/client/src/` (React app)
 
+### 6. Redis
+
+Shared state store deployed on the scoring cluster. All clusters connect to the same instance via a LoadBalancer IP.
+
 ---
 
 ## Request Flows
@@ -115,7 +148,7 @@ The presenter-facing UI. Shows real-time traffic visualization, cluster cards, l
 Player scans QR code
         │
         ▼
-  GET /go  (dashboard-frontend)
+  GET /go  (dashboard)
         │
         ▼
   agent round-robin redirect
@@ -124,13 +157,16 @@ Player scans QR code
   302 → {cluster_external_url}/play
         │
         ▼
-  tetris-frontend serves React app
+  game serves React app
         │
         ▼
   Player enters name → POST /api/join
-        │  (proxied through tetris-frontend to tetris-api)
+        │  (proxied through game to game-api)
         ▼
-  tetris-api creates player in Redis
+  game-api proxies to leaderboard-api (scoring cluster)
+        │
+        ▼
+  leaderboard-api creates player in Redis
         │
         ▼
   Returns player_id, cluster identity
@@ -144,18 +180,18 @@ Player board needs next piece
         ▼
   GET /api/next-piece?player_id=...
         │
-  tetris-frontend proxy
+  game proxy
         │
         ▼
-  tetris-api-federated  (Linkerd federated service)
+  game-api-federated  (Linkerd federated service)
         │
-   Linkerd sidecar load-balances across all clusters
+   Linkerd sidecar load-balances across all gameplay clusters
         │
-   ┌────┴────┬────────────┐
-   │         │            │
- ap-east  ap-central  ap-south
-   │         │            │
-   └────┬────┴────────────┘
+   ┌────┴────┬──────────────────┐
+   │         │                  │
+ east      west             central
+   │         │                  │
+   └────┬────┴──────────────────┘
         │
   Scenario effects applied:
   - Latency injection (sleep)
@@ -170,9 +206,32 @@ Player board needs next piece
   Player board renders piece with cluster badge
 ```
 
+### Score Submission Flow (cross-cluster dependency)
+
+```
+Player clears lines
+        │
+        ▼
+  POST /api/score  { player_id, lines_cleared, level }
+        │
+  game proxy → game-api
+        │
+        ▼
+  game-api proxies to leaderboard-api
+  (leaderboard-api-scoring.tetris.svc.cluster.local)
+        │
+   Linkerd multicluster service → scoring cluster
+        │
+        ▼
+  leaderboard-api updates score in Redis
+        │
+        ▼
+  Returns updated score/level
+```
+
 ### QR Code Redirect Flow (round-robin)
 
-When multiple users scan the same QR code, they are distributed across different cluster frontends:
+When multiple users scan the same QR code, they are distributed across different gameplay cluster frontends:
 
 ```
 QR code → GET {DASHBOARD_URL}/go
@@ -195,10 +254,10 @@ QR code → GET {DASHBOARD_URL}/go
                ▼
      302 Redirect → {cluster_external_url}/play
 
-  User 1 → ap-east/play
-  User 2 → ap-central/play
-  User 3 → ap-south/play
-  User 4 → ap-east/play  (wraps around)
+  User 1 → gameplay-east/play
+  User 2 → gameplay-west/play
+  User 3 → gameplay-central/play
+  User 4 → gameplay-east/play  (wraps around)
 ```
 
 ### Admin Action Flow
@@ -207,7 +266,7 @@ QR code → GET {DASHBOARD_URL}/go
 Presenter clicks control on dashboard
         │
         ▼
-  dashboard-frontend
+  dashboard
         │
   POST /api/admin/{action}  (proxied to agent)
         │
@@ -216,7 +275,7 @@ Presenter clicks control on dashboard
   (targets specific cluster by key prefix)
         │
         ▼
-  tetris-api reads updated state on next request
+  game-api reads updated state on next request
   (effects applied immediately)
 ```
 
@@ -226,9 +285,9 @@ Presenter clicks control on dashboard
 Presenter clicks "Kill" on cluster card
         │
         ▼
-  POST /admin/scale-down  { cluster: "eu-west" }
+  POST /admin/scale-down  { cluster: "gameplay-west" }
         │
-  agent on dashboard cluster
+  agent on platform cluster
         │
    Is target == self?
    ├─ Yes → PATCH k8s Deployment replicas=0
@@ -247,13 +306,13 @@ Presenter clicks "Kill" on cluster card
 
 ## Redis Data Model
 
-All clusters share a single Redis instance. Keys are prefixed to namespace data by cluster or as global.
+All clusters share a single Redis instance on the scoring cluster. Keys are prefixed to namespace data by cluster or as global.
 
 ### Key Naming Conventions
 
 | Prefix | Scope | Example |
 |---|---|---|
-| `{cluster}:` | Per-cluster state | `us-east:game:state` |
+| `{cluster}:` | Per-cluster state | `gameplay-east:game:state` |
 | `global:` | Shared across all clusters | `global:player:p_abc12345` |
 
 ### Per-Cluster Keys
@@ -302,15 +361,15 @@ Per-piece-type counters. Keys are piece type letters, values are counts.
 
 #### `{cluster}:game:cluster` (Hash)
 
-Cluster identity, written by tetris-api on startup. Used by agent for cluster discovery and info display.
+Cluster identity, written by game-api on startup. Used by agent for cluster discovery and info display.
 
 | Field | Type | Description |
 |---|---|---|
-| `name` | string | Cluster display name (e.g., `"ap-east"`) |
+| `name` | string | Cluster display name (e.g., `"gameplay-east"`) |
 | `color` | string | Hex color (e.g., `"#3b82f6"`) |
-| `region` | string | Region label (e.g., `"ap-east"`) |
+| `region` | string | Region label (e.g., `"gameplay-east"`) |
 | `pod` | string | Hostname of the pod that last wrote this key |
-| `external_url` | string | Public URL of this cluster's tetris-frontend (e.g., `"http://ap-east.localhost:8080"`) |
+| `external_url` | string | Public URL of this cluster's game frontend (e.g., `"http://gameplay-east.localhost:8080"`) |
 
 #### `{cluster}:event:log` (List)
 
@@ -319,7 +378,7 @@ Capped event log (max 200 entries). Each entry is a JSON string.
 ```json
 {
   "time": "2025-03-15T14:30:00.000Z",
-  "cluster": "ap-east",
+  "cluster": "gameplay-east",
   "text": "Latency set to 800ms"
 }
 ```
@@ -334,7 +393,7 @@ Set of all player IDs (e.g., `"p_abc12345"`). Shared across all clusters so any 
 
 #### `global:player:{player_id}` (Hash)
 
-Per-player state. Created by `/api/join`, updated by `/api/next-piece` and `/api/score`.
+Per-player state. Created by leaderboard-api via `/api/join`, updated by leaderboard-api via `/api/score`.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
@@ -358,7 +417,7 @@ The agent discovers clusters dynamically by scanning Redis keys:
 
 ```javascript
 const keys = await redis.keys('*:game:cluster');
-// keys = ["ap-east:game:cluster", "ap-central:game:cluster", "ap-south:game:cluster"]
+// keys = ["gameplay-east:game:cluster", "gameplay-west:game:cluster", "gameplay-central:game:cluster"]
 // cluster names extracted by stripping ":game:cluster" suffix
 ```
 
@@ -372,20 +431,22 @@ This means clusters self-register by writing their identity to `{cluster}:game:c
 
 | Deployment | Image | Clusters | Scalable | Purpose |
 |---|---|---|---|---|
-| `tetris-frontend` | `tetris` | All | Yes | Serves React game + proxies to tetris-api |
-| `tetris-api` | `tetris-api` | All | Yes (0 for failover demo) | FastAPI game backend |
-| `dashboard-frontend` | `dashboard` | Dashboard only | Yes | Serves React dashboard + proxies to agent |
-| `agent` | `agent` | All | No (always 1) | Admin API, k8s scaling, cluster info aggregation |
+| `game` | `game` | Gameplay (3) | Yes | Serves React game + proxies to game-api |
+| `game-api` | `game-api` | Gameplay (3) | Yes (0 for failover demo) | FastAPI game backend |
+| `leaderboard-api` | `leaderboard-api` | Scoring (1) | Yes | Scoring microservice |
+| `dashboard` | `dashboard` | Platform (1) | Yes | Serves React dashboard + proxies to agent |
+| `agent` | `agent` | Gameplay (3) + Platform (1) | No (always 1) | Admin API, k8s scaling, cluster info aggregation |
 
 ### Services
 
 | Service | Type | Labels | Purpose |
 |---|---|---|---|
-| `tetris-frontend` | LoadBalancer | — | Player entry point |
-| `tetris-api` | ClusterIP | `mirror.linkerd.io/federated: member` | Federated across clusters via Linkerd |
-| `dashboard-frontend` | LoadBalancer (port 8090) | — | Presenter entry point |
+| `game` | LoadBalancer | — | Player entry point |
+| `game-api` | ClusterIP | `mirror.linkerd.io/federated: member` | Federated across gameplay clusters via Linkerd |
+| `leaderboard-api` | ClusterIP | `mirror.linkerd.io/exported: "true"` | Exported for cross-cluster access from gameplay clusters |
+| `dashboard` | LoadBalancer (port 8090) | — | Presenter entry point |
 | `agent` | ClusterIP | `mirror.linkerd.io/exported: "true"` | Mirrored for cross-cluster scaling proxy |
-| `redis` | ClusterIP | `mirror.linkerd.io/exported: "true"` | Shared state store |
+| `redis` | LoadBalancer | — | Shared state store on scoring cluster |
 
 ### Linkerd Multicluster Labels
 
@@ -396,23 +457,31 @@ This means clusters self-register by writing their identity to `{cluster}:game:c
 
 ### How Federated vs. Exported Services Differ
 
-- **Federated (`tetris-api`):** All cluster endpoints are merged into one virtual service (`tetris-api-federated`). Linkerd load-balances across all clusters transparently. The client resolves a single DNS name.
-- **Exported (`agent`, `redis`):** Each cluster's service appears as a distinct mirrored service in the target cluster (e.g., `agent-vastaya-ap-central`). The client must explicitly choose which cluster to call.
+- **Federated (`game-api`):** All gameplay cluster endpoints are merged into one virtual service (`game-api-federated`). Linkerd load-balances across all clusters transparently. The client resolves a single DNS name.
+- **Exported (`agent`, `leaderboard-api`, `redis`):** Each cluster's service appears as a distinct mirrored service in the target cluster (e.g., `agent-gameplay-central`, `leaderboard-api-scoring`). The client must explicitly choose which cluster to call.
 
 ---
 
 ## Environment Variables
 
-### tetris-api
+### game-api
 
 | Variable | Description | Default |
 |---|---|---|
 | `CLUSTER_NAME` | Cluster identity for piece badges and Redis key prefix | `local-dev` |
 | `CLUSTER_COLOR` | Hex color for UI differentiation | `#3b82f6` |
 | `CLUSTER_REGION` | Region label shown in the UI | `localhost` |
-| `EXTERNAL_URL` | Public URL of this cluster's tetris-frontend | `http://localhost:8000` |
+| `EXTERNAL_URL` | Public URL of this cluster's game frontend | `http://localhost:8000` |
 | `ADMIN_TOKEN` | Token required for all `/api/admin/*` calls | `demo-admin-2024` |
 | `REDIS_URL` | Redis connection URL | `redis://localhost:6379` |
+| `LEADERBOARD_API_URL` | URL of the leaderboard-api service (cross-cluster) | _(required)_ |
+
+### leaderboard-api
+
+| Variable | Description | Default |
+|---|---|---|
+| `REDIS_URL` | Redis connection URL | `redis://localhost:6379` |
+| `ADMIN_TOKEN` | Token required for admin endpoints | `demo-admin-2024` |
 
 ### agent
 
@@ -422,17 +491,18 @@ This means clusters self-register by writing their identity to `{cluster}:game:c
 | `DASHBOARD_URL` | Public URL of the dashboard (used for QR code and `/go` redirect) | `http://localhost:8001` |
 | `REDIS_URL` | Redis connection URL | `redis://localhost:6379` |
 | `ADMIN_TOKEN` | Token required for admin write endpoints | `demo-admin-2024` |
-| `DEPLOYMENT_NAME` | Name of the tetris-api Deployment (for k8s scaling) | `tetris-api` |
-| `SERVICE_PORT` | Port number for the tetris-api Service (used in k8s Service patches) | `80` |
-| `HTTPROUTE_NAME` | Name of the HTTPRoute resource (used for mode switching) | `tetris-api` |
+| `DEPLOYMENT_NAME` | Name of the game-api Deployment (for k8s scaling) | `game-api` |
+| `SERVICE_PORT` | Port number for the game-api Service (used in k8s Service patches) | `80` |
+| `HTTPROUTE_NAME` | Name of the HTTPRoute resource (used for mode switching) | `game-api` |
+| `LEADERBOARD_API_URL` | URL of the leaderboard-api service (cross-cluster) | _(optional)_ |
 
-### tetris-frontend
+### game
 
 | Variable | Description | Default |
 |---|---|---|
-| `API_TARGET` | URL of the tetris-api (federated service in k8s) | `http://127.0.0.1:8000` |
+| `API_TARGET` | URL of the game-api (federated service in k8s) | `http://127.0.0.1:8000` |
 
-### dashboard-frontend
+### dashboard
 
 | Variable | Description | Default |
 |---|---|---|
@@ -442,28 +512,42 @@ This means clusters self-register by writing their identity to `{cluster}:game:c
 
 ## Helm Chart
 
-The Helm chart at `helm/tetris/` deploys all four components plus Redis.
+The Helm chart at `helm/tetris/` deploys all components. Each cluster enables only the services it needs.
 
 ### Key Values
 
 | Value | Description | Default |
 |---|---|---|
-| `cluster.name` | Cluster identity | `"us-east"` |
+| `cluster.name` | Cluster identity | `"gameplay-east"` |
 | `cluster.color` | Hex color for piece badges | `"#3b82f6"` |
-| `cluster.region` | Region label | `"US East (N. Virginia)"` |
-| `externalUrl` | Public URL for the tetris-frontend (used in QR redirect targets) | `"https://rush.your-domain.com"` |
-| `dashboardUrl` | Public URL for the dashboard (used for QR code generation and `/go` redirect) | `""` |
+| `cluster.region` | Region label | `"US East"` |
+| `externalUrl` | Public URL for the game frontend (used in QR redirect targets) | `"https://rush.your-domain.com"` |
 | `adminToken` | Token for presenter controls | `"demo-admin-2024"` |
-| `redis.deploy` | Whether to deploy a Redis instance on this cluster | `true` |
-| `redis.url` | Override Redis URL (point to the dashboard cluster's Redis) | `""` |
-| `dashboard.enabled` | Whether to deploy dashboard-frontend on this cluster | `true` |
-| `service.federated` | Add `mirror.linkerd.io/federated: member` to tetris-api | `true` |
+| `game.enabled` | Deploy game frontend | `true` |
+| `gameApi.enabled` | Deploy game-api backend | `true` |
+| `dashboard.enabled` | Deploy dashboard frontend | `false` |
+| `agent.enabled` | Deploy agent | `true` |
+| `leaderboardApi.enabled` | Deploy leaderboard-api | `false` |
+| `leaderboardApiUrl` | Cross-cluster URL for leaderboard-api | `""` |
+| `redis.deploy` | Whether to deploy a Redis instance on this cluster | `false` |
+| `redis.url` | Redis connection URL (point to the scoring cluster's Redis) | `""` |
+| `service.mode` | Initial multicluster mode (`federated`, `mirrored`, `gateway`) | `federated` |
 | `linkerd.injectNamespace` | Enable Linkerd injection at namespace level | `true` |
 | `linkerd.injectPods` | Add `linkerd.io/inject: enabled` annotation to pods | `true` |
 
 ### Per-Cluster Overrides
 
-Each cluster is deployed with `--set` overrides from `scripts/k3d.sh`. The script sets `cluster.name`, `cluster.color`, `cluster.region`, `externalUrl`, and `redis.url` (pointing to the dashboard cluster's Redis LoadBalancer IP). Only the first cluster (`ap-east`) sets `redis.deploy: true` and `dashboard.enabled: true`.
+Each cluster is deployed with `--set` overrides from `scripts/k3d.sh`:
+
+| Cluster | Enabled Services | Special Config |
+|---|---|---|
+| `scoring` | leaderboard-api, Redis | `redis.deploy=true` |
+| `gameplay-east` | game, game-api, agent | `leaderboardApiUrl=http://leaderboard-api-scoring...` |
+| `gameplay-west` | game, game-api, agent | `leaderboardApiUrl=http://leaderboard-api-scoring...` |
+| `gameplay-central` | game, game-api, agent | `leaderboardApiUrl=http://leaderboard-api-scoring...` |
+| `platform` | dashboard, agent | — |
+
+The scoring cluster deploys first to establish Redis and the leaderboard-api. Gameplay clusters are deployed next with a cross-cluster reference to the leaderboard-api. The platform cluster deploys last.
 
 ---
 
@@ -477,7 +561,7 @@ Each cluster is deployed with `--set` overrides from `scripts/k3d.sh`. The scrip
 | 3 | 500 |
 | 4 (Tetris) | 800 |
 
-Final points = base points x current level. Submitted via `POST /api/score` after each piece locks.
+Final points = base points x current level. Submitted via `POST /api/score` through game-api to leaderboard-api.
 
 ---
 
