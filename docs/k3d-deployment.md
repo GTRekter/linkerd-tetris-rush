@@ -122,14 +122,14 @@ The Helm chart at `helm/tetris/` is deployed to each cluster in three phases:
 
 ### Alternative: Argo CD Deployment
 
-Instead of direct Helm installs, you can deploy the entire stack via Argo CD:
+Instead of direct Helm installs, you can deploy the entire stack via Argo CD using a separate script:
 
 ```bash
 export BUOYANT_LICENSE="your-license-key"
-./scripts/k3d.sh --argocd
+./scripts/k3d-argocd.sh
 ```
 
-When the `--argocd` flag is passed:
+This script sets up the same 5-cluster infrastructure (clusters, networking, Linkerd identity certificates) but replaces the Helm deployment phases with Argo CD:
 
 1. **Argo CD is installed** on the platform cluster (namespace `argocd`)
 2. **Remote clusters are registered** — ServiceAccount tokens are generated for each cluster and stored as Argo CD cluster Secrets
