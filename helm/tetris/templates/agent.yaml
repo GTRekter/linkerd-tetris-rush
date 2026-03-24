@@ -1,5 +1,6 @@
-# agent — deployed on every cluster for k8s scaling.
-# On the dashboard cluster it also serves cluster info, leaderboard, etc.
+# agent — cluster agent for k8s scaling, mode switching, admin controls.
+# Deployed on gameplay and platform clusters.
+{{- if .Values.agent.enabled }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -11,7 +12,7 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: game-api-scale
+  name: agent-role
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "tetris.labels" . | nindent 4 }}
@@ -37,14 +38,14 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: game-api-scale
+  name: agent-role
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "tetris.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: game-api-scale
+  name: agent-role
 subjects:
   - kind: ServiceAccount
     name: agent
@@ -134,3 +135,4 @@ spec:
   selector:
     {{- include "tetris.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: agent
+{{- end }}

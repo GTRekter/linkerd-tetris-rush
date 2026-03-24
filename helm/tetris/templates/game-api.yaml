@@ -1,5 +1,6 @@
 # game-api — FastAPI backend, scalable to 0 for failover demo.
 # Its service carries the multicluster label so Linkerd routes cross-cluster.
+{{- if .Values.gameApi.enabled }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -59,6 +60,10 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            {{- if .Values.leaderboardApiUrl }}
+            - name: LEADERBOARD_API_URL
+              value: {{ .Values.leaderboardApiUrl | quote }}
+            {{- end }}
           resources:
             requests:
               cpu: {{ .Values.resources.requests.cpu }}
@@ -104,3 +109,4 @@ spec:
   selector:
     {{- include "tetris.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: game-api
+{{- end }}

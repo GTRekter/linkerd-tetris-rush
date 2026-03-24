@@ -1,51 +1,183 @@
 # Tetris Rush application — one Application per cluster with cluster-specific
 # values matching the Helm overrides from k3d.sh.
 #
+# Architecture:
+#   gameplay-east/west/central — game + game-api + agent (3 clusters for P2C)
+#   scoring                    — leaderboard-api + redis
+#   platform                   — dashboard + agent
+#
 # Update repoURL and targetRevision to match your Git repository.
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: tetris-ap-east
+  name: tetris-gameplay-east
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "4"
 spec:
   project: tetris
   source:
-    # Update this to your actual repo URL
     repoURL: "https://github.com/YOUR_ORG/linkerd-tetris-rush.git"
     targetRevision: main
     path: helm/tetris
     helm:
       valuesObject:
-        dashboard:
+        game:
           enabled: true
-          image:
-            repository: dashboard
-            tag: local
+        gameApi:
+          enabled: true
+        agent:
+          enabled: true
+        dashboard:
+          enabled: false
+        leaderboardApi:
+          enabled: false
+        leaderboardApiUrl: "http://leaderboard-api-scoring.tetris.svc.cluster.local"
+        redis:
+          deploy: false
+          url: "redis://redis-scoring.tetris.svc.cluster.local:6379"
+        cluster:
+          name: gameplay-east
+          region: gameplay-east
+          color: "#3b82f6"
+        externalUrl: "http://gameplay-east.localhost:8080"
+  destination:
+    server: "https://gameplay-east:6443"
+    namespace: tetris
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tetris-gameplay-west
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: tetris
+  source:
+    repoURL: "https://github.com/YOUR_ORG/linkerd-tetris-rush.git"
+    targetRevision: main
+    path: helm/tetris
+    helm:
+      valuesObject:
+        game:
+          enabled: true
+        gameApi:
+          enabled: true
+        agent:
+          enabled: true
+        dashboard:
+          enabled: false
+        leaderboardApi:
+          enabled: false
+        leaderboardApiUrl: "http://leaderboard-api-scoring.tetris.svc.cluster.local"
+        redis:
+          deploy: false
+          url: "redis://redis-scoring.tetris.svc.cluster.local:6379"
+        cluster:
+          name: gameplay-west
+          region: gameplay-west
+          color: "#8b5cf6"
+        externalUrl: "http://gameplay-west.localhost:8081"
+  destination:
+    server: "https://gameplay-west:6443"
+    namespace: tetris
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tetris-gameplay-central
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: tetris
+  source:
+    repoURL: "https://github.com/YOUR_ORG/linkerd-tetris-rush.git"
+    targetRevision: main
+    path: helm/tetris
+    helm:
+      valuesObject:
+        game:
+          enabled: true
+        gameApi:
+          enabled: true
+        agent:
+          enabled: true
+        dashboard:
+          enabled: false
+        leaderboardApi:
+          enabled: false
+        leaderboardApiUrl: "http://leaderboard-api-scoring.tetris.svc.cluster.local"
+        redis:
+          deploy: false
+          url: "redis://redis-scoring.tetris.svc.cluster.local:6379"
+        cluster:
+          name: gameplay-central
+          region: gameplay-central
+          color: "#06b6d4"
+        externalUrl: "http://gameplay-central.localhost:8082"
+  destination:
+    server: "https://gameplay-central:6443"
+    namespace: tetris
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tetris-scoring
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: tetris
+  source:
+    repoURL: "https://github.com/YOUR_ORG/linkerd-tetris-rush.git"
+    targetRevision: main
+    path: helm/tetris
+    helm:
+      valuesObject:
+        game:
+          enabled: false
+        gameApi:
+          enabled: false
+        agent:
+          enabled: false
+        dashboard:
+          enabled: false
+        leaderboardApi:
+          enabled: true
         redis:
           deploy: true
           url: "redis://redis.tetris.svc.cluster.local:6379"
-        agent:
-          image:
-            repository: agent
-            tag: local
-        game:
-          image:
-            repository: game
-            tag: local
-        gameApi:
-          image:
-            repository: game-api
-            tag: local
         cluster:
-          name: tetris-ap-east
-          region: tetris-ap-east
-          color: "#3b82f6"
-        externalUrl: "http://tetris-ap-east.localhost:8080"
+          name: scoring
+          region: scoring
+          color: "#f59e0b"
+        externalUrl: "http://scoring.localhost:8083"
   destination:
-    server: "https://tetris-ap-east:6443"
+    server: "https://scoring:6443"
     namespace: tetris
   syncPolicy:
     automated:
@@ -58,98 +190,38 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: tetris-ap-central
+  name: tetris-platform
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "4"
 spec:
   project: tetris
   source:
-    # Update this to your actual repo URL
     repoURL: "https://github.com/YOUR_ORG/linkerd-tetris-rush.git"
     targetRevision: main
     path: helm/tetris
     helm:
       valuesObject:
-        dashboard:
+        game:
           enabled: false
-          image:
-            repository: dashboard
-            tag: local
+        gameApi:
+          enabled: false
+        agent:
+          enabled: true
+        dashboard:
+          enabled: true
+        leaderboardApi:
+          enabled: false
         redis:
           deploy: false
-          url: "redis://redis-tetris-ap-east.tetris.svc.cluster.local:6379"
-        agent:
-          image:
-            repository: agent
-            tag: local
-        game:
-          image:
-            repository: game
-            tag: local
-        gameApi:
-          image:
-            repository: game-api
-            tag: local
+          url: "redis://redis-scoring.tetris.svc.cluster.local:6379"
         cluster:
-          name: tetris-ap-central
-          region: tetris-ap-central
-          color: "#8b5cf6"
-        externalUrl: "http://tetris-ap-central.localhost:8081"
+          name: platform
+          region: platform
+          color: "#10b981"
+        externalUrl: "http://platform.localhost:9090"
   destination:
-    server: "https://tetris-ap-central:6443"
-    namespace: tetris
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
----
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: tetris-ap-south
-  namespace: argocd
-  annotations:
-    argocd.argoproj.io/sync-wave: "4"
-spec:
-  project: tetris
-  source:
-    # Update this to your actual repo URL
-    repoURL: "https://github.com/YOUR_ORG/linkerd-tetris-rush.git"
-    targetRevision: main
-    path: helm/tetris
-    helm:
-      valuesObject:
-        dashboard:
-          enabled: false
-          image:
-            repository: dashboard
-            tag: local
-        redis:
-          deploy: false
-          url: "redis://redis-tetris-ap-east.tetris.svc.cluster.local:6379"
-        agent:
-          image:
-            repository: agent
-            tag: local
-        game:
-          image:
-            repository: game
-            tag: local
-        gameApi:
-          image:
-            repository: game-api
-            tag: local
-        cluster:
-          name: tetris-ap-south
-          region: tetris-ap-south
-          color: "#06b6d4"
-        externalUrl: "http://tetris-ap-south.localhost:8082"
-  destination:
-    server: "https://tetris-ap-south:6443"
+    server: "https://platform:6443"
     namespace: tetris
   syncPolicy:
     automated:

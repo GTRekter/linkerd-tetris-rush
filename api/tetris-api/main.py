@@ -17,6 +17,7 @@ import socket
 import time
 import qrcode
 import qrcode.image.svg
+import httpx
 import redis.asyncio as aioredis
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,6 +36,7 @@ EXTERNAL_URL = os.getenv("EXTERNAL_URL", "http://localhost:8000")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "demo-admin-2024")
 POD_NAME = os.getenv("HOSTNAME", socket.gethostname())
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+LEADERBOARD_API_URL = os.getenv("LEADERBOARD_API_URL", "")
 
 PIECE_TYPES = ["I", "O", "T", "S", "Z", "J", "L"]
 LINE_SCORES = {0: 0, 1: 100, 2: 300, 3: 500, 4: 800}
@@ -44,6 +46,7 @@ LINE_SCORES = {0: 0, 1: 100, 2: 300, 3: 500, 4: 800}
 # ---------------------------------------------------------------------------
 
 rdb = aioredis.from_url(REDIS_URL, decode_responses=True)
+http_client = httpx.AsyncClient(timeout=5.0) if LEADERBOARD_API_URL else None
 
 # All keys are prefixed with the cluster name so multiple clusters can share
 # a single Redis instance.  Helper ``k()`` builds the prefixed key.
@@ -175,6 +178,17 @@ async def info():
 async def join(req: Request):
     data = await req.json()
     name = (data.get("name") or "Anonymous").strip()[:20]
+
+    if http_client:
+        try:
+            resp = await http_client.post(f"{LEADERBOARD_API_URL}/api/join", json={"name": name})
+            resp.raise_for_status()
+            result = resp.json()
+            return {"player_id": result["player_id"], "name": result["name"], "cluster": CLUSTER_NAME, "cluster_color": CLUSTER_COLOR}
+        except Exception as e:
+            print(f"[leaderboard-api] join failed, falling back to local Redis: {e}")
+
+    # Fallback: write directly to Redis
     player_id = "p_" + "".join(random.choices("abcdefghijklmnopqrstuvwxyz0123456789", k=8))
     now = time.time()
     await rdb.hset(gk(f"player:{player_id}"), mapping={
@@ -293,6 +307,18 @@ async def submit_score(req: Request):
     lines_cleared = int(data.get("lines_cleared", 0))
     level = int(data.get("level", 1))
 
+    if http_client:
+        try:
+            resp = await http_client.post(
+                f"{LEADERBOARD_API_URL}/api/score",
+                json={"player_id": player_id, "lines_cleared": lines_cleared, "level": level},
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            print(f"[leaderboard-api] score failed, falling back to local Redis: {e}")
+
+    # Fallback: write directly to Redis
     p = await rdb.hgetall(gk(f"player:{player_id}"))
     if not p:
         raise HTTPException(status_code=404, detail="player_not_found")
@@ -320,6 +346,15 @@ async def submit_score(req: Request):
 
 @app.get("/api/leaderboard")
 async def leaderboard():
+    if http_client:
+        try:
+            resp = await http_client.get(f"{LEADERBOARD_API_URL}/api/leaderboard")
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            print(f"[leaderboard-api] leaderboard failed, falling back to local Redis: {e}")
+
+    # Fallback: read directly from Redis
     player_ids = await rdb.smembers(gk("players"))
     players = []
     for pid in player_ids:

@@ -10,7 +10,7 @@ const API_TARGET_FEDERATED = process.env.API_TARGET_FEDERATED || API_TARGET.repl
 const AGENT_URL = process.env.AGENT_URL || '';
 const staticDir = path.resolve(__dirname, './build');
 
-// Fire-and-forget: tell agent about a Linkerd-level denial
+// Fire-and-forget: tell the agent about a Linkerd-level denial
 function reportDenied() {
   if (!AGENT_URL) return;
   const u = new URL(AGENT_URL);

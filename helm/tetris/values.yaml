@@ -1,51 +1,67 @@
 ## tetris Helm chart values
 ## Customize per cluster by overriding these values with -f or --set flags.
 
-# Player-facing Express proxy — always on, serves game UI
+# Player-facing Express proxy — serves game UI (gameplay clusters only)
 game:
+  enabled: true
   replicaCount: 1
   image:
     repository: game
     tag: local
     pullPolicy: IfNotPresent
 
-# FastAPI backend — scaled to 0 during failover demo
+# FastAPI backend — scaled to 0 during failover demo (gameplay clusters only)
 gameApi:
+  enabled: true
   replicaCount: 1
   image:
     repository: game-api
     tag: local
     pullPolicy: IfNotPresent
 
-# Enable/disable dashboard components (deploy on one cluster only)
+# Presenter dashboard UI (platform cluster only)
 dashboard:
-  enabled: true
-  # Presenter dashboard UI — always on
+  enabled: false
   replicaCount: 1
   image:
     repository: dashboard
     tag: local
     pullPolicy: IfNotPresent
 
-# Agent — k8s scaling, admin commands
+# Cluster agent — k8s scaling, mode switching, admin controls
+# Deployed on gameplay and platform clusters
 agent:
+  enabled: true
   replicaCount: 1
   image:
     repository: agent
     tag: local
     pullPolicy: IfNotPresent
 
+# Leaderboard API — scoring microservice (scoring cluster only)
+leaderboardApi:
+  enabled: false
+  replicaCount: 1
+  image:
+    repository: leaderboard-api
+    tag: local
+    pullPolicy: IfNotPresent
+
+# Cross-cluster leaderboard URL for game-api (set on gameplay clusters)
+# e.g. http://leaderboard-api-scoring.tetris.svc.cluster.local
+leaderboardApiUrl: ""
+
 # Cluster identity — override per deployment
 cluster:
-  name: "us-east"
+  name: "gameplay-east"
   color: "#3b82f6"
-  region: "US East (N. Virginia)"
+  region: "US East"
 
 # Shared Redis URL — all clusters write to the same instance.
-# Override per cluster at deploy time to point to the dashboard cluster's Redis.
+# Override per cluster at deploy time to point to the scoring cluster's Redis.
 redis:
-  # Deploy a Redis instance on this cluster (enable on one cluster only)
-  deploy: true
+  # Deploy a Redis instance on this cluster (scoring cluster only)
+  deploy: false
   url: ""
 
 # Public URL shown in the QR code sidebar (game LoadBalancer)

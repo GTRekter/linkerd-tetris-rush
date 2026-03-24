@@ -1,47 +1,44 @@
-# dashboard — presenter UI, only deployed on the platform cluster.
-{{- if .Values.dashboard.enabled }}
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: dashboard
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "tetris.labels" . | nindent 4 }}
----
+# leaderboard-api — scoring microservice that owns player/score data.
+# Deployed on the scoring cluster and exported via Linkerd multicluster.
+{{- if .Values.leaderboardApi.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: dashboard
+  name: leaderboard-api
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "tetris.labels" . | nindent 4 }}
-    app.kubernetes.io/component: dashboard
+    app.kubernetes.io/component: leaderboard-api
 spec:
-  replicas: {{ .Values.dashboard.replicaCount }}
+  replicas: {{ .Values.leaderboardApi.replicaCount }}
   selector:
     matchLabels:
       {{- include "tetris.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: dashboard
+      app.kubernetes.io/component: leaderboard-api
   template:
     metadata:
       labels:
         {{- include "tetris.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: dashboard
+        app.kubernetes.io/component: leaderboard-api
       {{- if .Values.linkerd.injectPods }}
       annotations:
         linkerd.io/inject: enabled
       {{- end }}
     spec:
-      serviceAccountName: dashboard
       containers:
-        - name: dashboard
-          image: "{{ .Values.dashboard.image.repository }}:{{ .Values.dashboard.image.tag }}"
-          imagePullPolicy: {{ .Values.dashboard.image.pullPolicy }}
+        - name: leaderboard-api
+          image: "{{ .Values.leaderboardApi.image.repository }}:{{ .Values.leaderboardApi.image.tag }}"
+          imagePullPolicy: {{ .Values.leaderboardApi.image.pullPolicy }}
           ports:
             - containerPort: 80
           env:
-            - name: AGENT_TARGET
-              value: "http://agent.{{ .Release.Namespace }}.svc.cluster.local"
+            - name: REDIS_URL
+              value: {{ include "tetris.redisUrl" . | quote }}
+            - name: ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: tetris-secrets
+                  key: admin-token
           resources:
             requests:
               cpu: 50m
@@ -51,7 +48,7 @@ spec:
               memory: 128Mi
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /api/health
               port: 80
             initialDelaySeconds: 5
             periodSeconds: 5
@@ -59,19 +56,20 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: dashboard
+  name: leaderboard-api
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "tetris.labels" . | nindent 4 }}
-    app.kubernetes.io/component: dashboard
+    app.kubernetes.io/component: leaderboard-api
+    mirror.linkerd.io/exported: "true"
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   ports:
-    - port: 8090
+    - port: 80
       targetPort: 80
       protocol: TCP
       name: http
   selector:
     {{- include "tetris.selectorLabels" . | nindent 4 }}
-    app.kubernetes.io/component: dashboard
+    app.kubernetes.io/component: leaderboard-api
 {{- end }}
