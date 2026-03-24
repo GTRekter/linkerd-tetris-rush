@@ -46,7 +46,7 @@ The project deploys across five domain-based K3d clusters, each owning a specifi
 | `k3d-gameplay-west` | Gameplay | game, game-api, agent | Player-facing region 2 |
 | `k3d-gameplay-central` | Gameplay | game, game-api, agent | Player-facing region 3 |
 | `k3d-scoring` | Scoring | leaderboard-api, Redis | Centralized scoring and player data |
-| `k3d-platform` | Operations | dashboard, agent | Presenter dashboard and admin controls |
+| `k3d-platform` | Operations | dashboard, agent, Argo CD | Presenter dashboard, admin controls, GitOps |
 
 When users scan the Dashboard QR code, they are randomly routed (round-robin) to one of the three game LoadBalancer services (one per gameplay cluster). The presenter dashboard on `platform` aggregates data from all clusters. The `leaderboard-api` on `scoring` is a hard cross-cluster dependency called by every `game-api` instance through the Linkerd mesh.
 
@@ -152,6 +152,7 @@ After deployment, the following endpoints are available:
 | Player (gameplay-west) | `http://gameplay-west.localhost:8081` | Tetris game |
 | Player (gameplay-central) | `http://gameplay-central.localhost:8082` | Tetris game |
 | Presenter Dashboard | `http://platform.localhost:9090` | Admin dashboard |
+| Argo CD | `https://platform.localhost:9091` | GitOps UI (when using `--argocd` flag) |
 
 ## Debug
 

@@ -10,7 +10,7 @@ spec:
     - "https://helm.linkerd.io/edge"
     - "https://helm.linkerd.io/stable"
     # Update this to your actual repo URL
-    - "https://github.com/YOUR_ORG/linkerd-tetris-rush.git"
+    - "https://github.com/GTRekter/linkerd-tetris-rush.git"
   destinations:
     # gameplay clusters
     - server: "https://gameplay-east:6443"

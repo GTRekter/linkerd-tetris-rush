@@ -120,6 +120,39 @@ The Helm chart at `helm/tetris/` is deployed to each cluster in three phases:
 - `dashboard.enabled=true`, `agent.enabled=true`
 - `redis.url` set to the scoring cluster's Redis LoadBalancer IP
 
+### Alternative: Argo CD Deployment
+
+Instead of direct Helm installs, you can deploy the entire stack via Argo CD:
+
+```bash
+export BUOYANT_LICENSE="your-license-key"
+./scripts/k3d.sh --argocd
+```
+
+When the `--argocd` flag is passed:
+
+1. **Argo CD is installed** on the platform cluster (namespace `argocd`)
+2. **Remote clusters are registered** — ServiceAccount tokens are generated for each cluster and stored as Argo CD cluster Secrets
+3. **Linkerd identity certificates** are pre-applied to all clusters
+4. **Argo CD manifests from `argo/`** are applied — the AppProject, ApplicationSets, and Applications handle the full deployment via sync waves:
+   - Wave 0: Gateway API CRDs (all clusters)
+   - Wave 1: Linkerd CRDs (all clusters)
+   - Wave 2: Linkerd control plane (all clusters)
+   - Wave 3: Linkerd multicluster (all clusters)
+   - Wave 4: Tetris applications (per-cluster values)
+5. **Direct Helm installs are skipped** — Argo CD manages everything
+
+The Argo CD UI is exposed at `https://platform.localhost:9091`.
+
+**Getting the Argo CD admin password:**
+
+```bash
+kubectl --context k3d-platform -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath='{.data.password}' | base64 -d
+```
+
+**Note:** Multicluster Link resources cannot be statically committed to Git (they contain dynamic gateway IPs). The `k3d.sh` script generates and applies these after cluster creation regardless of the deployment mode. See `argo/linkerd-multicluster-link.yaml` for the generation script.
+
 ---
 
 ## Endpoints After Deployment
@@ -130,6 +163,7 @@ The Helm chart at `helm/tetris/` is deployed to each cluster in three phases:
 | Player (gameplay-west) | `http://gameplay-west.localhost:8081` | Tetris game |
 | Player (gameplay-central) | `http://gameplay-central.localhost:8082` | Tetris game |
 | Presenter Dashboard | `http://platform.localhost:9090` | Admin dashboard |
+| Argo CD | `https://platform.localhost:9091` | GitOps UI (`--argocd` mode only) |
 
 ---
 
