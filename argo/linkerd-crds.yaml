@@ -10,19 +10,19 @@ spec:
   generators:
     - list:
         elements:
-          - cluster: vastaya-ap-east
-            server: "https://vastaya-ap-east:6443"
-          - cluster: vastaya-ap-central
-            server: "https://vastaya-ap-central:6443"
-          - cluster: vastaya-ap-south
-            server: "https://vastaya-ap-south:6443"
+          - cluster: tetris-ap-east
+            server: "https://tetris-ap-east:6443"
+          - cluster: tetris-ap-central
+            server: "https://tetris-ap-central:6443"
+          - cluster: tetris-ap-south
+            server: "https://tetris-ap-south:6443"
   template:
     metadata:
       name: "linkerd-crds-{{ .cluster }}"
       annotations:
         argocd.argoproj.io/sync-wave: "1"
     spec:
-      project: vastaya
+      project: tetris
       source:
         repoURL: https://helm.buoyant.cloud
         chart: linkerd-enterprise-crds

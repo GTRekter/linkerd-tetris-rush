@@ -3,7 +3,7 @@ import './ClusterCard.css';
 
 const CLIENT_IDENTITIES = [
     { id: 'linkerd-gateway', label: 'linkerd-gateway' },
-    { id: 'tetris-frontend', label: 'tetris-frontend' },
+    { id: 'game', label: 'game' },
 ];
 
 const ClusterCard = ({ entry, onSetLatency, onToggleFailure, onToggleMtls, onSetAuthPolicy, onSetAccessPolicy, onScaleDown, onScaleUp }) => {

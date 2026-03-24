@@ -9,12 +9,12 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: linkerd-multicluster-vastaya-ap-east
+  name: linkerd-multicluster-tetris-ap-east
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "3"
 spec:
-  project: vastaya
+  project: tetris
   source:
     repoURL: https://helm.buoyant.cloud
     chart: linkerd-enterprise-multicluster
@@ -26,12 +26,12 @@ spec:
         controllers:
           - link:
               ref:
-                name: vastaya-ap-central
+                name: tetris-ap-central
           - link:
               ref:
-                name: vastaya-ap-south
+                name: tetris-ap-south
   destination:
-    server: "https://vastaya-ap-east:6443"
+    server: "https://tetris-ap-east:6443"
     namespace: linkerd-multicluster
   syncPolicy:
     automated:
@@ -44,12 +44,12 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: linkerd-multicluster-vastaya-ap-central
+  name: linkerd-multicluster-tetris-ap-central
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "3"
 spec:
-  project: vastaya
+  project: tetris
   source:
     repoURL: https://helm.buoyant.cloud
     chart: linkerd-enterprise-multicluster
@@ -61,12 +61,12 @@ spec:
         controllers:
           - link:
               ref:
-                name: vastaya-ap-east
+                name: tetris-ap-east
           - link:
               ref:
-                name: vastaya-ap-south
+                name: tetris-ap-south
   destination:
-    server: "https://vastaya-ap-central:6443"
+    server: "https://tetris-ap-central:6443"
     namespace: linkerd-multicluster
   syncPolicy:
     automated:
@@ -79,12 +79,12 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: linkerd-multicluster-vastaya-ap-south
+  name: linkerd-multicluster-tetris-ap-south
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "3"
 spec:
-  project: vastaya
+  project: tetris
   source:
     repoURL: https://helm.buoyant.cloud
     chart: linkerd-enterprise-multicluster
@@ -96,12 +96,12 @@ spec:
         controllers:
           - link:
               ref:
-                name: vastaya-ap-east
+                name: tetris-ap-east
           - link:
               ref:
-                name: vastaya-ap-central
+                name: tetris-ap-central
   destination:
-    server: "https://vastaya-ap-south:6443"
+    server: "https://tetris-ap-south:6443"
     namespace: linkerd-multicluster
   syncPolicy:
     automated:

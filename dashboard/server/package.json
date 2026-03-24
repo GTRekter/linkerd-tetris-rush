@@ -1,8 +1,8 @@
 {
-  "name": "tetris-dashboard-server",
+  "name": "dashboard-server",
   "version": "1.0.0",
   "private": true,
-  "description": "Express server that serves the Tetris dashboard React build and proxies API to FastAPI.",
+  "description": "Express server that serves the dashboard React build and proxies API to dashboard-api.",
   "main": "index.js",
   "license": "MIT",
   "dependencies": {

@@ -1,9 +1,9 @@
-# dashboard-frontend — presenter UI, only deployed on the dashboard cluster.
+# dashboard — presenter UI, only deployed on the dashboard cluster.
 {{- if .Values.dashboard.enabled }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: dashboard-frontend
+  name: dashboard
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "tetris.labels" . | nindent 4 }}
@@ -11,32 +11,32 @@ metadata:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: dashboard-frontend
+  name: dashboard
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "tetris.labels" . | nindent 4 }}
-    app.kubernetes.io/component: dashboard-frontend
+    app.kubernetes.io/component: dashboard
 spec:
-  replicas: {{ .Values.dashboardFrontend.replicaCount }}
+  replicas: {{ .Values.dashboard.replicaCount }}
   selector:
     matchLabels:
       {{- include "tetris.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: dashboard-frontend
+      app.kubernetes.io/component: dashboard
   template:
     metadata:
       labels:
         {{- include "tetris.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: dashboard-frontend
+        app.kubernetes.io/component: dashboard
       {{- if .Values.linkerd.injectPods }}
       annotations:
         linkerd.io/inject: enabled
       {{- end }}
     spec:
-      serviceAccountName: dashboard-frontend
+      serviceAccountName: dashboard
       containers:
-        - name: dashboard-frontend
-          image: "{{ .Values.dashboardFrontend.image.repository }}:{{ .Values.dashboardFrontend.image.tag }}"
-          imagePullPolicy: {{ .Values.dashboardFrontend.image.pullPolicy }}
+        - name: dashboard
+          image: "{{ .Values.dashboard.image.repository }}:{{ .Values.dashboard.image.tag }}"
+          imagePullPolicy: {{ .Values.dashboard.image.pullPolicy }}
           ports:
             - containerPort: 80
           env:
@@ -59,11 +59,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: dashboard-frontend
+  name: dashboard
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "tetris.labels" . | nindent 4 }}
-    app.kubernetes.io/component: dashboard-frontend
+    app.kubernetes.io/component: dashboard
 spec:
   type: LoadBalancer
   ports:
@@ -73,5 +73,5 @@ spec:
       name: http
   selector:
     {{- include "tetris.selectorLabels" . | nindent 4 }}
-    app.kubernetes.io/component: dashboard-frontend
+    app.kubernetes.io/component: dashboard
 {{- end }}

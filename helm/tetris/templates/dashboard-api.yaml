@@ -11,21 +11,21 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: tetris-api-scale
+  name: game-api-scale
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "tetris.labels" . | nindent 4 }}
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments", "deployments/scale"]
-    resourceNames: ["tetris-api", "tetris-frontend"]
+    resourceNames: ["game-api", "game"]
     verbs: ["get", "patch"]
-  # Multicluster mode switching: patch tetris-api Service labels
+  # Multicluster mode switching: patch game-api Service labels
   - apiGroups: [""]
     resources: ["services"]
-    resourceNames: ["tetris-api"]
+    resourceNames: ["game-api"]
     verbs: ["get", "patch"]
-  # Multicluster mode switching: manage the tetris-api HTTPRoute
+  # Multicluster mode switching: manage the game-api HTTPRoute
   - apiGroups: ["gateway.networking.k8s.io"]
     resources: ["httproutes"]
     verbs: ["get", "create", "patch", "update", "delete"]
@@ -37,14 +37,14 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: tetris-api-scale
+  name: game-api-scale
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "tetris.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: tetris-api-scale
+  name: game-api-scale
 subjects:
   - kind: ServiceAccount
     name: dashboard-api
@@ -87,7 +87,7 @@ spec:
             - name: CLUSTER_NAME
               value: {{ .Values.cluster.name | quote }}
             - name: DEPLOYMENT_NAME
-              value: tetris-api
+              value: game-api
             - name: ADMIN_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -100,7 +100,7 @@ spec:
             - name: SERVICE_PORT
               value: {{ .Values.service.port | quote }}
             - name: HTTPROUTE_NAME
-              value: "{{ include "tetris.name" . }}-api"
+              value: game-api
           resources:
             requests:
               cpu: 50m

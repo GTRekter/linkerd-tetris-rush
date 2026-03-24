@@ -2,27 +2,25 @@
 ## Customize per cluster by overriding these values with -f or --set flags.
 
 # Player-facing Express proxy — always on, serves game UI
-tetrisFrontend:
+game:
   replicaCount: 1
   image:
-    repository: tetris
+    repository: game
     tag: local
     pullPolicy: IfNotPresent
 
 # FastAPI backend — scaled to 0 during failover demo
-tetrisApi:
+gameApi:
   replicaCount: 1
   image:
-    repository: tetris-api
+    repository: game-api
     tag: local
     pullPolicy: IfNotPresent
 
 # Enable/disable dashboard components (deploy on one cluster only)
 dashboard:
   enabled: true
-
-# Presenter dashboard UI — always on
-dashboardFrontend:
+  # Presenter dashboard UI — always on
   replicaCount: 1
   image:
     repository: dashboard
@@ -50,7 +48,7 @@ redis:
   deploy: true
   url: ""
 
-# Public URL shown in the QR code sidebar (tetris-frontend LoadBalancer)
+# Public URL shown in the QR code sidebar (game LoadBalancer)
 externalUrl: "https://rush.your-domain.com"
 
 # Admin token — use a Kubernetes secret or override at install time
@@ -74,18 +72,18 @@ service:
   type: ClusterIP
   port: 80
   # Multicluster mode — switchable at runtime from the dashboard.
-  # Controls the tetris-api Service label and HTTPRoute backends.
+  # Controls the game-api Service label and HTTPRoute backends.
   #
   #   federated — mirror.linkerd.io/federated: member
-  #               HTTPRoute routes tetris-api → tetris-api-federated.
+  #               HTTPRoute routes game-api → game-api-federated.
   #               Linkerd aggregates endpoints from all clusters automatically.
   #
   #   mirrored  — mirror.linkerd.io/remote-discovery: member
-  #               HTTPRoute splits traffic equally across local tetris-api
+  #               HTTPRoute splits traffic equally across local game-api
   #               and all mirrored backends. Pod-to-pod direct communication.
   #
   #   gateway   — mirror.linkerd.io/exported: "true"
-  #               HTTPRoute splits traffic equally across local tetris-api
+  #               HTTPRoute splits traffic equally across local game-api
   #               and all mirrored backends. Traffic flows through gateways.
   mode: federated
 

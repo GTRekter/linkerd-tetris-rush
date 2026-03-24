@@ -229,7 +229,7 @@ run_docker() {
     fi
 
     echo "Building Docker image..."
-    docker build -t tetris:local -f "$ROOT_DIR/tetris/Dockerfile" "$ROOT_DIR"
+    docker build -t game:local -f "$ROOT_DIR/tetris/Dockerfile" "$ROOT_DIR"
 
     echo ""
     echo "  Tetris - Docker"
@@ -245,7 +245,7 @@ run_docker() {
         -e CLUSTER_REGION="$CLUSTER_REGION" \
         -e EXTERNAL_URL=http://localhost:8080 \
         -e ADMIN_TOKEN="$ADMIN_TOKEN" \
-        tetris:local
+        game:local
 }
 
 # --- Parse arguments ---

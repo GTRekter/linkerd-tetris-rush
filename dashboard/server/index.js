@@ -21,7 +21,7 @@ app.use(createProxyMiddleware({
   pathFilter: '/admin',
 }));
 
-// Proxy /api/* to dashboard-api (cluster config, admin commands to tetris-api).
+// Proxy /api/* to dashboard-api (cluster config, admin commands to game-api).
 app.use(createProxyMiddleware({
   target: DASHBOARD_API_TARGET,
   changeOrigin: true,

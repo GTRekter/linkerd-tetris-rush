@@ -7,18 +7,18 @@ set -euo pipefail
 
 directory_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 directory_root="$(cd "$directory_script/.." && pwd)"
-project_prefix="vastaya"
+project_prefix="tetris"
 project_network="${project_prefix}-network"
 cluster_contexts=(
     "k3d-${project_prefix}-ap-east"
     "k3d-${project_prefix}-ap-central"
     "k3d-${project_prefix}-ap-south"
 )
-dashboard_frontend_image_tag="dashboard:local"
+dashboard_image_tag="dashboard:local"
 dashboard_api_image_tag="dashboard-api:local"
-tetris_frontend_image_tag="tetris:local"
-tetris_api_image_tag="tetris-api:local"
-application_namespace="vastaya"
+game_image_tag="game:local"
+game_api_image_tag="game-api:local"
+application_namespace="tetris"
 application_color_map=(
     "#3b82f6" # blue
     "#8b5cf6" # purple
@@ -212,21 +212,21 @@ done
 # ============================================================
 
 echo "Building container images"
-docker build -t "$dashboard_frontend_image_tag" -f "$directory_root/dashboard/Dockerfile"          "$directory_root"
-docker build -t "$dashboard_api_image_tag"      -f "$directory_root/api/dashboard-api/Dockerfile" "$directory_root"
-docker build -t "$tetris_frontend_image_tag"    -f "$directory_root/tetris/Dockerfile"            "$directory_root"
-docker build -t "$tetris_api_image_tag"         -f "$directory_root/api/tetris-api/Dockerfile"    "$directory_root"
+docker build -t "$dashboard_image_tag"     -f "$directory_root/dashboard/Dockerfile"          "$directory_root"
+docker build -t "$dashboard_api_image_tag" -f "$directory_root/api/dashboard-api/Dockerfile" "$directory_root"
+docker build -t "$game_image_tag"          -f "$directory_root/tetris/Dockerfile"            "$directory_root"
+docker build -t "$game_api_image_tag"      -f "$directory_root/api/tetris-api/Dockerfile"    "$directory_root"
 
 echo "Importing images into k3d clusters"
-# Dashboard frontend only goes to the first cluster
-k3d image import "$dashboard_frontend_image_tag" -c "${cluster_contexts[0]#k3d-}"
-echo "Dashboard frontend image imported into ${cluster_contexts[0]}"
+# Dashboard image only goes to the first cluster
+k3d image import "$dashboard_image_tag" -c "${cluster_contexts[0]#k3d-}"
+echo "Dashboard image imported into ${cluster_contexts[0]}"
 
-# Dashboard API and tetris images go to all clusters
+# Dashboard API and game images go to all clusters
 for cluster in "${cluster_contexts[@]}"; do
-    k3d image import "$dashboard_api_image_tag"      -c "${cluster#k3d-}"
-    k3d image import "$tetris_frontend_image_tag"    -c "${cluster#k3d-}"
-    k3d image import "$tetris_api_image_tag"         -c "${cluster#k3d-}"
+    k3d image import "$dashboard_api_image_tag" -c "${cluster#k3d-}"
+    k3d image import "$game_image_tag"          -c "${cluster#k3d-}"
+    k3d image import "$game_api_image_tag"      -c "${cluster#k3d-}"
     echo "Images imported into $cluster"
 done
 
@@ -241,14 +241,14 @@ helm --kube-context="$dashboard_context" upgrade --install tetris "$directory_ro
     --set "dashboard.enabled=true" \
     --set "redis.deploy=true" \
     --set "redis.url=redis://redis.${application_namespace}.svc.cluster.local:6379" \
-    --set "dashboardFrontend.image.repository=${dashboard_frontend_image_tag%:*}" \
-    --set "dashboardFrontend.image.tag=${dashboard_frontend_image_tag#*:}" \
+    --set "dashboard.image.repository=${dashboard_image_tag%:*}" \
+    --set "dashboard.image.tag=${dashboard_image_tag#*:}" \
     --set "dashboardApi.image.repository=${dashboard_api_image_tag%:*}" \
     --set "dashboardApi.image.tag=${dashboard_api_image_tag#*:}" \
-    --set "tetrisFrontend.image.repository=${tetris_frontend_image_tag%:*}" \
-    --set "tetrisFrontend.image.tag=${tetris_frontend_image_tag#*:}" \
-    --set "tetrisApi.image.repository=${tetris_api_image_tag%:*}" \
-    --set "tetrisApi.image.tag=${tetris_api_image_tag#*:}" \
+    --set "game.image.repository=${game_image_tag%:*}" \
+    --set "game.image.tag=${game_image_tag#*:}" \
+    --set "gameApi.image.repository=${game_api_image_tag%:*}" \
+    --set "gameApi.image.tag=${game_api_image_tag#*:}" \
     --set "cluster.name=${dashboard_cluster_name}" \
     --set "cluster.region=${dashboard_cluster_name}" \
     --set "cluster.color=${application_color_map[0]}" \
@@ -279,14 +279,14 @@ for i in "${!cluster_contexts[@]}"; do
         --set "dashboard.enabled=false" \
         --set "redis.deploy=false" \
         --set "redis.url=redis://${redis_lb_ip}:6379" \
-        --set "dashboardFrontend.image.repository=${dashboard_frontend_image_tag%:*}" \
-        --set "dashboardFrontend.image.tag=${dashboard_frontend_image_tag#*:}" \
+        --set "dashboard.image.repository=${dashboard_image_tag%:*}" \
+        --set "dashboard.image.tag=${dashboard_image_tag#*:}" \
         --set "dashboardApi.image.repository=${dashboard_api_image_tag%:*}" \
         --set "dashboardApi.image.tag=${dashboard_api_image_tag#*:}" \
-        --set "tetrisFrontend.image.repository=${tetris_frontend_image_tag%:*}" \
-        --set "tetrisFrontend.image.tag=${tetris_frontend_image_tag#*:}" \
-        --set "tetrisApi.image.repository=${tetris_api_image_tag%:*}" \
-        --set "tetrisApi.image.tag=${tetris_api_image_tag#*:}" \
+        --set "game.image.repository=${game_image_tag%:*}" \
+        --set "game.image.tag=${game_image_tag#*:}" \
+        --set "gameApi.image.repository=${game_api_image_tag%:*}" \
+        --set "gameApi.image.tag=${game_api_image_tag#*:}" \
         --set "cluster.name=${cluster_name}" \
         --set "cluster.region=${cluster_name}" \
         --set "cluster.color=${application_color_map[$i]}" \

@@ -1,8 +1,8 @@
 {
-  "name": "tetris-frontend-server",
+  "name": "game-server",
   "version": "1.0.0",
   "private": true,
-  "description": "Express server that serves the Tetris React build and proxies API to FastAPI.",
+  "description": "Express server that serves the game React build and proxies API to game-api.",
   "main": "index.js",
   "license": "MIT",
   "dependencies": {

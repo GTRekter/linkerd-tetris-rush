@@ -1,9 +1,9 @@
-# tetris-api — FastAPI backend, scalable to 0 for failover demo.
+# game-api — FastAPI backend, scalable to 0 for failover demo.
 # Its service carries the multicluster label so Linkerd routes cross-cluster.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: tetris-api
+  name: game-api
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "tetris.labels" . | nindent 4 }}
@@ -11,32 +11,32 @@ metadata:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: tetris-api
+  name: game-api
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "tetris.labels" . | nindent 4 }}
-    app.kubernetes.io/component: tetris-api
+    app.kubernetes.io/component: game-api
 spec:
-  replicas: {{ .Values.tetrisApi.replicaCount }}
+  replicas: {{ .Values.gameApi.replicaCount }}
   selector:
     matchLabels:
       {{- include "tetris.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: tetris-api
+      app.kubernetes.io/component: game-api
   template:
     metadata:
       labels:
         {{- include "tetris.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: tetris-api
+        app.kubernetes.io/component: game-api
       {{- if .Values.linkerd.injectPods }}
       annotations:
         linkerd.io/inject: enabled
       {{- end }}
     spec:
-      serviceAccountName: tetris-api
+      serviceAccountName: game-api
       containers:
-        - name: tetris-api
-          image: "{{ .Values.tetrisApi.image.repository }}:{{ .Values.tetrisApi.image.tag }}"
-          imagePullPolicy: {{ .Values.tetrisApi.image.pullPolicy }}
+        - name: game-api
+          image: "{{ .Values.gameApi.image.repository }}:{{ .Values.gameApi.image.tag }}"
+          imagePullPolicy: {{ .Values.gameApi.image.pullPolicy }}
           ports:
             - containerPort: 80
           env:
@@ -82,11 +82,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: tetris-api
+  name: game-api
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "tetris.labels" . | nindent 4 }}
-    app.kubernetes.io/component: tetris-api
+    app.kubernetes.io/component: game-api
     {{- if eq .Values.service.mode "federated" }}
     mirror.linkerd.io/federated: member
     {{- else if eq .Values.service.mode "mirrored" }}
@@ -103,4 +103,4 @@ spec:
       name: http
   selector:
     {{- include "tetris.selectorLabels" . | nindent 4 }}
-    app.kubernetes.io/component: tetris-api
+    app.kubernetes.io/component: game-api

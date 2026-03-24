@@ -6,7 +6,7 @@ const { URL } = require('url');
 const app = express();
 const PORT = process.env.PORT || 80;
 const API_TARGET = process.env.API_TARGET || 'http://127.0.0.1:8000';
-const API_TARGET_FEDERATED = process.env.API_TARGET_FEDERATED || API_TARGET.replace('tetris-api', 'tetris-api-federated');
+const API_TARGET_FEDERATED = process.env.API_TARGET_FEDERATED || API_TARGET.replace('game-api', 'game-api-federated');
 const DASHBOARD_API_URL = process.env.DASHBOARD_API_URL || '';
 const staticDir = path.resolve(__dirname, './build');
 
@@ -29,18 +29,18 @@ function reportDenied() {
   req.end();
 }
 
-// Current multicluster mode and mTLS state — polled from the local tetris-api
+// Current multicluster mode and mTLS state — polled from the local game-api
 let currentMode = 'federated';
 let mtlsEnabled = true;
 
 function activeTarget() {
   // When mTLS is disabled the pod is unmeshed so federated/mirrored services
-  // are unreachable — always route to the local tetris-api.
+  // are unreachable — always route to the local game-api.
   if (!mtlsEnabled) return API_TARGET;
   return currentMode === 'federated' ? API_TARGET_FEDERATED : API_TARGET;
 }
 
-// Poll /api/info on the local tetris-api to track the current mode
+// Poll /api/info on the local game-api to track the current mode
 function pollMode() {
   const local = new URL(API_TARGET);
   const opts = {
@@ -74,7 +74,7 @@ function pollMode() {
 setInterval(pollMode, 3000);
 setTimeout(pollMode, 1000);
 
-// Proxy /api/* to tetris-api or tetris-api-federated based on current mode.
+// Proxy /api/* to game-api or game-api-federated based on current mode.
 app.all('/api/*', (req, res) => {
   const target = new URL(activeTarget());
   const opts = {

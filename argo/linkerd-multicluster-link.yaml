@@ -16,7 +16,7 @@
 #
 # Example generation for k3d (run after clusters and multicluster are up):
 #
-#   CLUSTERS=(k3d-vastaya-ap-east k3d-vastaya-ap-central k3d-vastaya-ap-south)
+#   CLUSTERS=(k3d-tetris-ap-east k3d-tetris-ap-central k3d-tetris-ap-south)
 #   for src in "${CLUSTERS[@]}"; do
 #     for dst in "${CLUSTERS[@]}"; do
 #       [ "$src" = "$dst" ] && continue

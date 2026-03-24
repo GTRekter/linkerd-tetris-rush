@@ -11,13 +11,13 @@ app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 80;
-const DEPLOYMENT_NAME = process.env.DEPLOYMENT_NAME || 'tetris-api';
+const DEPLOYMENT_NAME = process.env.DEPLOYMENT_NAME || 'game-api';
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'demo-admin-2024';
 const CLUSTER_NAME = process.env.CLUSTER_NAME || 'local-dev';
 const DASHBOARD_URL = process.env.DASHBOARD_URL || 'http://localhost:8001';
 const SERVICE_PORT = parseInt(process.env.SERVICE_PORT || '80');
-const HTTPROUTE_NAME = process.env.HTTPROUTE_NAME || 'tetris-api';
+const HTTPROUTE_NAME = process.env.HTTPROUTE_NAME || 'game-api';
 const redis = new Redis(REDIS_URL);
 
 // ---------------------------------------------------------------------------
@@ -54,7 +54,7 @@ async function pushLog(cluster, text) {
 
 /**
  * Discover all cluster names by scanning Redis for *:game:cluster keys.
- * Each tetris-api writes its identity to {cluster}:game:cluster on startup.
+ * Each game-api writes its identity to {cluster}:game:cluster on startup.
  */
 async function clusterNames() {
   const keys = await redis.keys('*:game:cluster');
@@ -175,7 +175,7 @@ function k8sRequest(method, path, body) {
 }
 
 /**
- * Patch the tetris-api Service labels to match the given mode.
+ * Patch the game-api Service labels to match the given mode.
  * Removes labels from other modes and applies the new one.
  */
 async function patchServiceMode(mode) {
@@ -186,7 +186,7 @@ async function patchServiceMode(mode) {
   Object.assign(labels, MODE_LABELS[mode]);
 
   return k8sRequest('PATCH',
-    `/api/v1/namespaces/${creds.namespace}/services/tetris-api`,
+    `/api/v1/namespaces/${creds.namespace}/services/game-api`,
     { metadata: { labels } }
   );
 }
@@ -194,21 +194,21 @@ async function patchServiceMode(mode) {
 /**
  * Build the HTTPRoute backendRefs array for mirrored/gateway modes.
  * Discovers remote clusters from Redis and derives mirrored service names
- * (tetris-api-{cluster}) dynamically.
+ * (game-api-{cluster}) dynamically.
  */
 async function buildBackendRefs() {
-  const refs = [{ name: 'tetris-api', port: SERVICE_PORT, weight: 1 }];
+  const refs = [{ name: 'game-api', port: SERVICE_PORT, weight: 1 }];
   const names = await clusterNames();
   for (const name of names) {
     if (name === CLUSTER_NAME) continue;
-    refs.push({ name: `tetris-api-${name}`, port: SERVICE_PORT, weight: 1 });
+    refs.push({ name: `game-api-${name}`, port: SERVICE_PORT, weight: 1 });
   }
   return refs;
 }
 
 /**
  * Create or patch the HTTPRoute for mirrored/gateway modes.
- * Deploys an HTTPRoute with parentRef: tetris-api and backends splitting
+ * Deploys an HTTPRoute with parentRef: game-api and backends splitting
  * traffic equally across local and mirrored services.
  */
 async function createOrPatchHTTPRoute() {
@@ -222,7 +222,7 @@ async function createOrPatchHTTPRoute() {
       namespace: creds.namespace,
     },
     spec: {
-      parentRefs: [{ group: '', kind: 'Service', name: 'tetris-api', port: SERVICE_PORT }],
+      parentRefs: [{ group: '', kind: 'Service', name: 'game-api', port: SERVICE_PORT }],
       rules: [{ backendRefs }],
     },
   };
@@ -312,7 +312,7 @@ app.post('/admin/scale-up', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Read endpoints — all from Redis (shared with tetris-api)
+// Read endpoints — all from Redis (shared with game-api)
 // ---------------------------------------------------------------------------
 
 app.get('/api/clusters', async (_req, res) => {
@@ -455,8 +455,8 @@ app.get('/api/clusters/:name/pieces', async (req, res) => {
   }
 });
 
-// Internal endpoint for tetris-frontend to report Linkerd-level denials
-// (when the proxy blocks the request before it reaches tetris-api).
+// Internal endpoint for game to report Linkerd-level denials
+// (when the proxy blocks the request before it reaches game-api).
 app.post('/api/internal/report-denied', async (req, res) => {
   try {
     const cluster = req.body.cluster || CLUSTER_NAME;
@@ -677,7 +677,7 @@ app.post('/api/admin/toggle-mtls', async (req, res) => {
       // and trigger a rollout restart
       const injectValue = cur ? 'disabled' : 'enabled';
       const restartedAt = new Date().toISOString();
-      const deployments = ['tetris-api', 'tetris-frontend'];
+      const deployments = ['game-api', 'game'];
       for (const dep of deployments) {
         try {
           const creds = k8sCreds();
@@ -739,8 +739,8 @@ app.post('/api/admin/set-auth-policy', async (req, res) => {
     await redis.hset(k(c, 'game:state'), 'auth_policy_enabled', enabled ? '1' : '0');
     await redis.hset(k(c, 'game:state'), 'auth_policy_allowed_users', JSON.stringify(allowedUsers));
 
-    // Always include dashboard-api and dashboard-frontend in the policy
-    const ALWAYS_ALLOWED = ['dashboard-api', 'dashboard-frontend'];
+    // Always include dashboard-api and dashboard in the policy
+    const ALWAYS_ALLOWED = ['dashboard-api', 'dashboard'];
     const allAllowed = [...new Set([...ALWAYS_ALLOWED, ...allowedUsers])];
 
     if (c === CLUSTER_NAME) {
@@ -756,7 +756,7 @@ app.post('/api/admin/set-auth-policy', async (req, res) => {
             apiVersion: 'policy.linkerd.io/v1alpha1',
             kind: 'MeshTLSAuthentication',
             metadata: {
-              name: `tetris-api-authn-${c}`,
+              name: `game-api-authn-${c}`,
               namespace: ns,
             },
             spec: {
@@ -772,17 +772,17 @@ app.post('/api/admin/set-auth-policy', async (req, res) => {
             apiVersion: 'policy.linkerd.io/v1alpha1',
             kind: 'AuthorizationPolicy',
             metadata: {
-              name: `tetris-api-auth-${c}`,
+              name: `game-api-auth-${c}`,
               namespace: ns,
             },
             spec: {
               targetRef: {
                 group: 'policy.linkerd.io',
                 kind: 'Server',
-                name: `tetris-api-server-${c}`,
+                name: `game-api-server-${c}`,
               },
               requiredAuthenticationRefs: [{
-                name: `tetris-api-authn-${c}`,
+                name: `game-api-authn-${c}`,
                 kind: 'MeshTLSAuthentication',
                 group: 'policy.linkerd.io',
               }],
@@ -797,7 +797,7 @@ app.post('/api/admin/set-auth-policy', async (req, res) => {
             );
           } catch {
             await k8sRequest('PATCH',
-              `/apis/policy.linkerd.io/v1alpha1/namespaces/${ns}/meshtlsauthentications/tetris-api-authn-${c}`,
+              `/apis/policy.linkerd.io/v1alpha1/namespaces/${ns}/meshtlsauthentications/game-api-authn-${c}`,
               meshTLSAuthn
             );
           }
@@ -810,7 +810,7 @@ app.post('/api/admin/set-auth-policy', async (req, res) => {
             );
           } catch {
             await k8sRequest('PATCH',
-              `/apis/policy.linkerd.io/v1alpha1/namespaces/${ns}/authorizationpolicies/tetris-api-auth-${c}`,
+              `/apis/policy.linkerd.io/v1alpha1/namespaces/${ns}/authorizationpolicies/game-api-auth-${c}`,
               authPolicy
             );
           }
@@ -827,12 +827,12 @@ app.post('/api/admin/set-auth-policy', async (req, res) => {
 
           try {
             await k8sRequest('DELETE',
-              `/apis/policy.linkerd.io/v1alpha1/namespaces/${ns}/authorizationpolicies/tetris-api-auth-${c}`
+              `/apis/policy.linkerd.io/v1alpha1/namespaces/${ns}/authorizationpolicies/game-api-auth-${c}`
             );
           } catch { /* ignore if not found */ }
           try {
             await k8sRequest('DELETE',
-              `/apis/policy.linkerd.io/v1alpha1/namespaces/${ns}/meshtlsauthentications/tetris-api-authn-${c}`
+              `/apis/policy.linkerd.io/v1alpha1/namespaces/${ns}/meshtlsauthentications/game-api-authn-${c}`
             );
           } catch { /* ignore if not found */ }
         } catch (k8sErr) {
@@ -860,7 +860,7 @@ app.post('/api/admin/set-access-policy', async (req, res) => {
     if (c === CLUSTER_NAME) {
       const creds = k8sCreds();
       const ns = creds.namespace;
-      const serverName = `tetris-api-server-${c}`;
+      const serverName = `game-api-server-${c}`;
 
       // Ensure Server resource exists, then set the accessPolicy
       const server = {
@@ -868,7 +868,7 @@ app.post('/api/admin/set-access-policy', async (req, res) => {
         kind: 'Server',
         metadata: { name: serverName, namespace: ns },
         spec: {
-          podSelector: { matchLabels: { 'app.kubernetes.io/component': 'tetris-api' } },
+          podSelector: { matchLabels: { 'app.kubernetes.io/component': 'game-api' } },
           port: SERVICE_PORT,
           accessPolicy,
         },
