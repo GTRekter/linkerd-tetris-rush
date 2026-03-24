@@ -179,31 +179,19 @@ async def join(req: Request):
     data = await req.json()
     name = (data.get("name") or "Anonymous").strip()[:20]
 
-    if http_client:
-        try:
-            resp = await http_client.post(f"{LEADERBOARD_API_URL}/api/join", json={"name": name})
-            resp.raise_for_status()
-            result = resp.json()
-            return {"player_id": result["player_id"], "name": result["name"], "cluster": CLUSTER_NAME, "cluster_color": CLUSTER_COLOR}
-        except Exception as e:
-            print(f"[leaderboard-api] join failed, falling back to local Redis: {e}")
+    if not http_client:
+        raise HTTPException(status_code=503, detail="leaderboard_api_not_configured")
 
-    # Fallback: write directly to Redis
-    player_id = "p_" + "".join(random.choices("abcdefghijklmnopqrstuvwxyz0123456789", k=8))
-    now = time.time()
-    await rdb.hset(gk(f"player:{player_id}"), mapping={
-        "name": name,
-        "score": "0",
-        "lines": "0",
-        "level": "1",
-        "pieces": "0",
-        "clusters_served": "",
-        "active": "1",
-        "joined_at": str(now),
-        "last_seen": str(now),
-    })
-    await rdb.sadd(gk("players"), player_id)
-    return {"player_id": player_id, "name": name, "cluster": CLUSTER_NAME, "cluster_color": CLUSTER_COLOR}
+    try:
+        resp = await http_client.post(f"{LEADERBOARD_API_URL}/api/join", json={"name": name})
+        resp.raise_for_status()
+        result = resp.json()
+        return {"player_id": result["player_id"], "name": result["name"], "cluster": CLUSTER_NAME, "cluster_color": CLUSTER_COLOR}
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=str(e))
+    except Exception as e:
+        print(f"[leaderboard-api] join failed: {e}")
+        raise HTTPException(status_code=503, detail="leaderboard_api_unavailable")
 
 
 # ---------------------------------------------------------------------------
@@ -307,37 +295,21 @@ async def submit_score(req: Request):
     lines_cleared = int(data.get("lines_cleared", 0))
     level = int(data.get("level", 1))
 
-    if http_client:
-        try:
-            resp = await http_client.post(
-                f"{LEADERBOARD_API_URL}/api/score",
-                json={"player_id": player_id, "lines_cleared": lines_cleared, "level": level},
-            )
-            resp.raise_for_status()
-            return resp.json()
-        except Exception as e:
-            print(f"[leaderboard-api] score failed, falling back to local Redis: {e}")
+    if not http_client:
+        raise HTTPException(status_code=503, detail="leaderboard_api_not_configured")
 
-    # Fallback: write directly to Redis
-    p = await rdb.hgetall(gk(f"player:{player_id}"))
-    if not p:
-        raise HTTPException(status_code=404, detail="player_not_found")
-
-    points = LINE_SCORES.get(min(lines_cleared, 4), 0) * max(level, 1)
-    pipe = rdb.pipeline()
-    pipe.hincrby(gk(f"player:{player_id}"), "score", points)
-    pipe.hincrby(gk(f"player:{player_id}"), "lines", lines_cleared)
-    pipe.hset(gk(f"player:{player_id}"), "level", str(level))
-    pipe.hset(gk(f"player:{player_id}"), "last_seen", str(time.time()))
-    await pipe.execute()
-
-    p = await rdb.hgetall(gk(f"player:{player_id}"))
-    return {
-        "score": int(p["score"]),
-        "lines": int(p["lines"]),
-        "level": int(p["level"]),
-        "pieces": int(p.get("pieces", 0)),
-    }
+    try:
+        resp = await http_client.post(
+            f"{LEADERBOARD_API_URL}/api/score",
+            json={"player_id": player_id, "lines_cleared": lines_cleared, "level": level},
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=str(e))
+    except Exception as e:
+        print(f"[leaderboard-api] score failed: {e}")
+        raise HTTPException(status_code=503, detail="leaderboard_api_unavailable")
 
 
 # ---------------------------------------------------------------------------
@@ -346,26 +318,18 @@ async def submit_score(req: Request):
 
 @app.get("/api/leaderboard")
 async def leaderboard():
-    if http_client:
-        try:
-            resp = await http_client.get(f"{LEADERBOARD_API_URL}/api/leaderboard")
-            resp.raise_for_status()
-            return resp.json()
-        except Exception as e:
-            print(f"[leaderboard-api] leaderboard failed, falling back to local Redis: {e}")
+    if not http_client:
+        raise HTTPException(status_code=503, detail="leaderboard_api_not_configured")
 
-    # Fallback: read directly from Redis
-    player_ids = await rdb.smembers(gk("players"))
-    players = []
-    for pid in player_ids:
-        p = await rdb.hgetall(gk(f"player:{pid}"))
-        if p:
-            players.append(p)
-    players.sort(key=lambda p: int(p.get("score", 0)), reverse=True)
-    return [
-        {"name": p["name"], "score": int(p["score"]), "lines": int(p["lines"]), "level": int(p["level"])}
-        for p in players[:20]
-    ]
+    try:
+        resp = await http_client.get(f"{LEADERBOARD_API_URL}/api/leaderboard")
+        resp.raise_for_status()
+        return resp.json()
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=str(e))
+    except Exception as e:
+        print(f"[leaderboard-api] leaderboard failed: {e}")
+        raise HTTPException(status_code=503, detail="leaderboard_api_unavailable")
 
 
 # ---------------------------------------------------------------------------

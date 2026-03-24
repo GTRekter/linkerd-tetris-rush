@@ -18,6 +18,7 @@ const CLUSTER_NAME = process.env.CLUSTER_NAME || 'local-dev';
 const DASHBOARD_URL = process.env.DASHBOARD_URL || 'http://localhost:8001';
 const SERVICE_PORT = parseInt(process.env.SERVICE_PORT || '80');
 const HTTPROUTE_NAME = process.env.HTTPROUTE_NAME || 'game-api';
+const LEADERBOARD_API_URL = process.env.LEADERBOARD_API_URL || '';
 const redis = new Redis(REDIS_URL);
 
 // ---------------------------------------------------------------------------
@@ -506,22 +507,19 @@ app.get('/api/clusters/:name/latency', async (req, res) => {
 });
 
 app.get('/api/leaderboard', async (_req, res) => {
+  if (!LEADERBOARD_API_URL) {
+    return res.status(503).json({ error: 'leaderboard_api_not_configured' });
+  }
   try {
-    const players = [];
-    const playerIds = await redis.smembers(gk('players'));
-    for (const pid of playerIds) {
-      const p = await redis.hgetall(gk(`player:${pid}`));
-      if (p && p.name) players.push(p);
+    const resp = await fetch(`${LEADERBOARD_API_URL}/api/leaderboard`);
+    if (!resp.ok) {
+      return res.status(resp.status).json({ error: `leaderboard-api returned ${resp.status}` });
     }
-    players.sort((a, b) => parseInt(b.score || '0') - parseInt(a.score || '0'));
-    res.json(players.slice(0, 20).map(p => ({
-      name: p.name,
-      score: parseInt(p.score || '0'),
-      lines: parseInt(p.lines || '0'),
-      level: parseInt(p.level || '1'),
-    })));
+    const data = await resp.json();
+    res.json(data);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[leaderboard-api] leaderboard failed:', err.message);
+    res.status(503).json({ error: 'leaderboard_api_unavailable' });
   }
 });
 

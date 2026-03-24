@@ -102,6 +102,10 @@ spec:
               value: {{ .Values.service.port | quote }}
             - name: HTTPROUTE_NAME
               value: game-api
+            {{- if .Values.leaderboardApiUrl }}
+            - name: LEADERBOARD_API_URL
+              value: {{ .Values.leaderboardApiUrl | quote }}
+            {{- end }}
           resources:
             requests:
               cpu: 50m
