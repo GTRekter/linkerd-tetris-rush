@@ -46,9 +46,6 @@ spec:
         server: "{{ .server }}"
         namespace: linkerd
       syncPolicy:
-        automated:
-          prune: true
-          selfHeal: true
         syncOptions:
           - CreateNamespace=true
           - ServerSideApply=true

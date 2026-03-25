@@ -210,6 +210,7 @@ spec:
           enabled: true
         leaderboardApi:
           enabled: false
+        leaderboardApiUrl: "http://leaderboard-api-scoring.tetris.svc.cluster.local"
         redis:
           deploy: false
           url: "redis://redis-scoring.tetris.svc.cluster.local:6379"
