@@ -47,6 +47,7 @@ metadata:
   labels:
     {{- include "tetris.labels" . | nindent 4 }}
     app.kubernetes.io/component: redis
+    mirror.linkerd.io/exported: "true"
 spec:
   type: LoadBalancer
   ports:
