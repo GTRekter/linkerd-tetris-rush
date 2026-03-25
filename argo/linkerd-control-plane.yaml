@@ -35,6 +35,7 @@ spec:
         targetRevision: "*"
         helm:
           valuesObject:
+            license: REPLACE_BUOYANT_LICENSE
             identityTrustAnchorsPEM: REPLACE_TRUST_ANCHOR_PEM
             identity:
               issuer:

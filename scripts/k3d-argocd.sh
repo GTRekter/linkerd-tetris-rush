@@ -305,16 +305,18 @@ done
 # Platform cluster uses in-cluster URL
 sed -i.bak "s|https://platform:6443|https://kubernetes.default.svc|g" "$argo_temp"/*.yaml
 
-# Inject certificate values into the Linkerd control-plane ApplicationSet
-CERT_DIR="$certificate_directory" perl -i -pe '
+# Inject certificate values and license into the Linkerd control-plane ApplicationSet
+CERT_DIR="$certificate_directory" BUOYANT_LIC="$BUOYANT_LICENSE" perl -i -pe '
     BEGIN {
         sub slurp { local $/; open my $f, "<", $_[0] or die $!; <$f> }
         $dir = $ENV{CERT_DIR};
+        $lic = $ENV{BUOYANT_LIC};
         $trust = slurp("$dir/ca.crt");
         $crt   = slurp("$dir/issuer.crt");
         $key   = slurp("$dir/issuer.key");
         for ($trust, $crt, $key) { chomp; s/\n/\\n/g; $_ = qq{"$_"} }
     }
+    s/REPLACE_BUOYANT_LICENSE/$lic/g;
     s/REPLACE_TRUST_ANCHOR_PEM/$trust/g;
     s/REPLACE_ISSUER_CRT_PEM/$crt/g;
     s/REPLACE_ISSUER_KEY_PEM/$key/g;
