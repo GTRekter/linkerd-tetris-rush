@@ -623,12 +623,21 @@ app.post('/api/admin/set-mode', async (req, res) => {
       return res.status(400).json({ error: `invalid mode: ${mode}. Must be federated, mirrored, or gateway` });
     }
 
-    // Always patch local cluster k8s resources
-    await patchServiceMode(mode);
-    if (mode === 'federated') {
-      await deleteHTTPRoute();
-    } else {
-      await createOrPatchHTTPRoute(mode);
+    // Patch local cluster k8s resources (only when game-api Service exists)
+    try {
+      await patchServiceMode(mode);
+      if (mode === 'federated') {
+        await deleteHTTPRoute();
+      } else {
+        await createOrPatchHTTPRoute(mode);
+      }
+    } catch (k8sErr) {
+      // Platform cluster has no game-api Service — skip local k8s patching
+      if (k8sErr.message && k8sErr.message.includes('404')) {
+        console.log('game-api Service not found locally, skipping k8s patching');
+      } else {
+        throw k8sErr;
+      }
     }
 
     // Propagate to all remote clusters so they patch their own Service labels + HTTPRoute

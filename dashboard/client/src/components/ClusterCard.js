@@ -94,17 +94,13 @@ const ClusterCard = ({ entry, onSetLatency, onToggleFailure, onToggleMtls, onSet
             {!entry.offline && (
                 <div className="card-section">
                     <div className="eyebrow mb-1">Failure Injection</div>
-                    <div className="form-check form-switch">
-                        <input
-                            type="checkbox"
-                            className="form-check-input"
-                            checked={!!entry.stats.failure_enabled}
-                            onChange={() => onToggleFailure()}
-                            style={{ accentColor: '#ef4444' }}
-                        />
-                        <label className="form-check-label small text-white-50">
-                            {entry.stats.failure_enabled ? 'Enabled (503)' : 'Disabled'}
-                        </label>
+                    <div className="d-flex gap-2 flex-wrap align-items-center">
+                        <button
+                            className={`btn btn-xs ${entry.stats.failure_enabled ? 'btn-outline-warning' : 'btn-outline-danger'}`}
+                            onClick={onToggleFailure}
+                        >
+                            {entry.stats.failure_enabled ? 'Disable 503s' : 'Enable 503s'}
+                        </button>
                     </div>
                 </div>
             )}
