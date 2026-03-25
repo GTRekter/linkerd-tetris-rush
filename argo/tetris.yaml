@@ -48,9 +48,6 @@ spec:
     server: "https://gameplay-east:6443"
     namespace: tetris
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
@@ -95,9 +92,6 @@ spec:
     server: "https://gameplay-west:6443"
     namespace: tetris
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
@@ -142,9 +136,6 @@ spec:
     server: "https://gameplay-central:6443"
     namespace: tetris
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
@@ -188,9 +179,6 @@ spec:
     server: "https://scoring:6443"
     namespace: tetris
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
@@ -234,9 +222,6 @@ spec:
     server: "https://platform:6443"
     namespace: tetris
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true

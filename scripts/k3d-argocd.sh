@@ -329,29 +329,6 @@ rm -rf "$argo_temp"
 # Multicluster links (dynamic — cannot be in Git)
 # ============================================================
 
-echo "Generating Linkerd multicluster links..."
-echo "Note: These are dynamic and generated per-environment."
-for src in "${cluster_contexts[@]}"; do
-    gw_ip=$(kubectl --context="$src" -n linkerd-multicluster get svc linkerd-gateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-    if [[ -z "$gw_ip" ]]; then
-        echo "  Skipping $src — no gateway IP yet (Argo CD will deploy Linkerd multicluster first)"
-        continue
-    fi
-    gw_port=$(kubectl --context="$src" -n linkerd-multicluster get svc linkerd-gateway -o jsonpath='{.spec.ports[?(@.name=="mc-gateway")].port}')
-    src_node="${src#k3d-}"
-    src_api_ip=$(docker inspect "k3d-${src_node}-server-0" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
-    for dst in "${cluster_contexts[@]}"; do
-        [ "$src" = "$dst" ] && continue
-        echo "  Linking $src into $dst..."
-        linkerd --context="$src" multicluster link-gen \
-            --cluster-name "${src#k3d-}" \
-            --gateway-addresses "$gw_ip" \
-            --gateway-port "$gw_port" \
-            --api-server-address "https://${src_api_ip}:6443" \
-            | kubectl --context="$dst" apply -f -
-    done
-done
-
 # ============================================================
 # Final Output
 # ============================================================
@@ -390,4 +367,27 @@ echo "Kubernetes Resources:"
 for context in "${cluster_contexts[@]}"; do
     echo "  watch kubectl --context=${context} get pods,svc,httproutes,server -A"
 done
+echo ""
+echo "Multicluster Links:"
+echo "  Link resources are dynamic and must be generated after Linkerd"
+echo "  multicluster gateways have LoadBalancer IPs. Wait for Argo CD to"
+echo "  finish syncing, then run:"
+echo ""
+echo "  CLUSTERS=(k3d-gameplay-east k3d-gameplay-west k3d-gameplay-central k3d-scoring k3d-platform)"
+echo '  for src in "${CLUSTERS[@]}"; do'
+echo '    gw_ip=$(kubectl --context="$src" -n linkerd-multicluster get svc linkerd-gateway -o jsonpath='"'"'{.status.loadBalancer.ingress[0].ip}'"'"')'
+echo '    gw_port=$(kubectl --context="$src" -n linkerd-multicluster get svc linkerd-gateway -o jsonpath='"'"'{.spec.ports[?(@.name=="mc-gateway")].port}'"'"')'
+echo '    src_node="${src#k3d-}"'
+echo '    src_api_ip=$(docker inspect "k3d-${src_node}-server-0" --format '"'"'{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'"'"')'
+echo '    for dst in "${CLUSTERS[@]}"; do'
+echo '      [ "$src" = "$dst" ] && continue'
+echo '      linkerd --context="$src" multicluster link-gen \'
+echo '        --cluster-name "${src#k3d-}" \'
+echo '        --gateway-addresses "$gw_ip" \'
+echo '        --gateway-port "$gw_port" \'
+echo '        --api-server-address "https://${src_api_ip}:6443" \'
+echo '        | kubectl --context="$dst" apply -f -'
+echo '    done'
+echo '  done'
+echo ""
 echo "  ======================================"
