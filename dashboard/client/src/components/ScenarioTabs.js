@@ -6,18 +6,22 @@ const MODES = [
     { id: 'gateway', label: 'Gateway' },
 ];
 
-const ModeSelector = ({ currentMode, onModeChange }) => (
+const ModeSelector = ({ currentMode, onModeChange, loading }) => (
     <div className="mode-selector">
         <span className="mode-label">Multicluster Mode</span>
-        <select
-            className="mode-dropdown"
-            value={currentMode}
-            onChange={e => onModeChange(e.target.value)}
-        >
-            {MODES.map(m => (
-                <option key={m.id} value={m.id}>{m.label}</option>
-            ))}
-        </select>
+        <div className="mode-dropdown-wrapper">
+            <select
+                className={`mode-dropdown${loading ? ' mode-dropdown--loading' : ''}`}
+                value={currentMode}
+                onChange={e => onModeChange(e.target.value)}
+                disabled={loading}
+            >
+                {MODES.map(m => (
+                    <option key={m.id} value={m.id}>{m.label}</option>
+                ))}
+            </select>
+            {loading && <span className="mode-spinner" />}
+        </div>
     </div>
 );
 
