@@ -36,5 +36,38 @@ export async function adminPost(path, body = {}) {
 export const setLatency = (cluster, latency_ms) => adminPost('/api/admin/set-latency', { cluster, latency_ms: parseInt(latency_ms) });
 export const toggleMtls = (cluster) => adminPost('/api/admin/toggle-mtls', { cluster });
 export const setAuthPolicy = (cluster, allowed_users) => adminPost('/api/admin/set-auth-policy', { cluster, allowed_users });
+export async function streamSetMode(mode, onStep) {
+    const res = await fetch('/api/admin/set-mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: ADMIN_TOKEN, mode }),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || res.statusText);
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalResult = null;
+    while (true) {
+        const { done, value } = await reader.read();
+        if (value) buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        for (const line of lines) {
+            if (!line.trim()) continue;
+            const step = JSON.parse(line);
+            if (step.step === 'complete') {
+                finalResult = step;
+            } else {
+                onStep(step);
+            }
+        }
+        if (done) break;
+    }
+    return finalResult;
+}
+
 export const setMode = (mode) => adminPost('/api/admin/set-mode', { mode });
 export const resetCluster = () => adminPost('/api/admin/reset');

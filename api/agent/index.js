@@ -623,47 +623,94 @@ app.post('/api/admin/set-mode', async (req, res) => {
       return res.status(400).json({ error: `invalid mode: ${mode}. Must be federated, mirrored, or gateway` });
     }
 
-    // Patch local cluster k8s resources (only when game-api Service exists)
+    // Stream progress steps as NDJSON
+    res.setHeader('Content-Type', 'application/x-ndjson');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Transfer-Encoding', 'chunked');
+
+    const sendStep = (step, status, detail) => {
+      res.write(JSON.stringify({ step, status, detail }) + '\n');
+    };
+
+    // Step 1: Patch local cluster k8s resources
+    sendStep('Patching local Service labels', 'running');
     try {
       await patchServiceMode(mode);
-      if (mode === 'federated') {
-        await deleteHTTPRoute();
-      } else {
-        await createOrPatchHTTPRoute(mode);
-      }
+      sendStep('Patching local Service labels', 'done');
     } catch (k8sErr) {
-      // Platform cluster has no game-api Service — skip local k8s patching
       if (k8sErr.message && k8sErr.message.includes('404')) {
-        console.log('game-api Service not found locally, skipping k8s patching');
+        sendStep('Patching local Service labels', 'skipped', 'game-api Service not found locally');
       } else {
         throw k8sErr;
       }
     }
 
-    // Propagate to all remote clusters so they patch their own Service labels + HTTPRoute
+    // Step 2: Patch HTTPRoute
+    if (mode === 'federated') {
+      sendStep('Deleting HTTPRoute (federated mode)', 'running');
+      try {
+        await deleteHTTPRoute();
+        sendStep('Deleting HTTPRoute (federated mode)', 'done');
+      } catch (k8sErr) {
+        if (k8sErr.message && k8sErr.message.includes('404')) {
+          sendStep('Deleting HTTPRoute (federated mode)', 'skipped', 'HTTPRoute not found');
+        } else {
+          throw k8sErr;
+        }
+      }
+    } else {
+      sendStep(`Creating HTTPRoute for ${mode} mode`, 'running');
+      try {
+        await createOrPatchHTTPRoute(mode);
+        sendStep(`Creating HTTPRoute for ${mode} mode`, 'done');
+      } catch (k8sErr) {
+        if (k8sErr.message && k8sErr.message.includes('404')) {
+          sendStep(`Creating HTTPRoute for ${mode} mode`, 'skipped', 'game-api not found');
+        } else {
+          throw k8sErr;
+        }
+      }
+    }
+
+    // Step 3: Propagate to remote clusters
     const names = await clusterNames();
     const remotes = names.filter(n => n !== CLUSTER_NAME);
     const proxyErrors = [];
-    await Promise.all(remotes.map(async (remote) => {
+    for (const remote of remotes) {
+      sendStep(`Propagating to ${remote}`, 'running');
       try {
         await proxyScale(remote, '/api/admin/set-mode', { ...req.body, cluster: remote });
+        sendStep(`Propagating to ${remote}`, 'done');
       } catch (err) {
         console.error(`set-mode proxy to ${remote} failed:`, err.message);
         proxyErrors.push(remote);
+        sendStep(`Propagating to ${remote}`, 'error', err.message);
       }
-    }));
+    }
 
-    // Store mode in Redis for all clusters
+    // Step 4: Store mode in Redis
+    sendStep('Persisting mode in Redis', 'running');
     await Promise.all(names.map(n => redis.hset(k(n, 'game:state'), 'multicluster_mode', mode)));
+    sendStep('Persisting mode in Redis', 'done');
+
     await pushLog(CLUSTER_NAME, `Multicluster mode set to ${mode}`);
-    const result = { mode };
+
+    // Final step
+    const result = { step: 'complete', status: 'done', mode };
     if (proxyErrors.length) {
       result.warnings = `Failed to propagate to: ${proxyErrors.join(', ')}`;
     }
-    res.json(result);
+    res.write(JSON.stringify(result) + '\n');
+    res.end();
   } catch (err) {
     console.error('set-mode failed:', err.message);
-    res.status(err.status || 500).json({ error: err.message });
+    // If headers already sent, write error as NDJSON; otherwise send normal error JSON
+    if (res.headersSent) {
+      res.write(JSON.stringify({ step: 'complete', status: 'error', detail: err.message }) + '\n');
+      res.end();
+    } else {
+      res.status(err.status || 500).json({ error: err.message });
+    }
   }
 });
 

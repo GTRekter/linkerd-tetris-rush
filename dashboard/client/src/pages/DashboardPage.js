@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import {
     fetchClusters, fetchClusterInfo, fetchClusterLogs, fetchClusterPieces,
     fetchClusterUsers, fetchClusterLatency, fetchLeaderboard,
-    adminPost,
+    adminPost, streamSetMode,
 } from '../services/agentApi.js';
 import GlobalStats from '../components/GlobalStats';
 import ModeSelector from '../components/ScenarioTabs';
@@ -17,6 +17,7 @@ const POLL_INTERVAL_MS = 1000;
 
 const DashboardPage = () => {
     const [multiclusterMode, setMulticlusterMode] = useState('federated');
+    const [modeChanging, setModeChanging] = useState(false);
     const [clusters, setClusters] = useState({});
     const [eventLog, setEventLog] = useState([]);
     const [leaderboard, setLeaderboard] = useState([]);
@@ -142,10 +143,29 @@ const DashboardPage = () => {
         }
     }, [addLog]);
 
-    const handleModeChange = useCallback((mode) => {
-        requestWithLog(() => adminPost('/api/admin/set-mode', { mode }), `set-mode → ${mode}`);
+    const handleModeChange = useCallback(async (mode) => {
         setMulticlusterMode(mode);
-    }, [requestWithLog]);
+        setModeChanging(true);
+        addLog('system', '#638cff', `Switching multicluster mode to ${mode}…`);
+        try {
+            const result = await streamSetMode(mode, (step) => {
+                const color = step.status === 'done' ? '#22c55e'
+                    : step.status === 'error' ? '#ef4444'
+                    : step.status === 'skipped' ? '#f59e0b'
+                    : '#638cff';
+                const suffix = step.detail ? ` (${step.detail})` : '';
+                addLog('system', color, `${step.step} — ${step.status}${suffix}`);
+            });
+            if (result?.warnings) {
+                addLog('system', '#f59e0b', result.warnings);
+            }
+            addLog('system', '#22c55e', `Mode switched to ${mode}`);
+        } catch (err) {
+            addLog('system', '#ef4444', `Failed to switch mode: ${err.message}`);
+        } finally {
+            setModeChanging(false);
+        }
+    }, [addLog]);
 
     const handleScaleDown = useCallback((cluster) => requestWithLog(() => adminPost('/admin/scale-down', { cluster }), 'scale-down'), [requestWithLog]);
     const handleScaleUp = useCallback((cluster) => requestWithLog(() => adminPost('/admin/scale-up', { cluster }), 'scale-up'), [requestWithLog]);
@@ -201,6 +221,7 @@ const DashboardPage = () => {
                             <ModeSelector
                                 currentMode={multiclusterMode}
                                 onModeChange={handleModeChange}
+                                loading={modeChanging}
                             />
                         </div>
                     </div>
