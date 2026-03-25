@@ -23,6 +23,8 @@ spec:
   template:
     metadata:
       name: "linkerd-crds-{{ .cluster }}"
+      labels:
+        component: linkerd-crds
       annotations:
         argocd.argoproj.io/sync-wave: "1"
     spec:

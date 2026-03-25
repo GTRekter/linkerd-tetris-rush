@@ -23,6 +23,8 @@ spec:
   template:
     metadata:
       name: "gateway-api-crds-{{ .cluster }}"
+      labels:
+        component: gateway-api
       annotations:
         argocd.argoproj.io/sync-wave: "0"
     spec:

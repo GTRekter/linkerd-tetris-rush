@@ -13,6 +13,8 @@ kind: Application
 metadata:
   name: tetris-gameplay-east
   namespace: argocd
+  labels:
+    component: tetris-app
   annotations:
     argocd.argoproj.io/sync-wave: "4"
 spec:
@@ -58,6 +60,8 @@ kind: Application
 metadata:
   name: tetris-gameplay-west
   namespace: argocd
+  labels:
+    component: tetris-app
   annotations:
     argocd.argoproj.io/sync-wave: "4"
 spec:
@@ -103,6 +107,8 @@ kind: Application
 metadata:
   name: tetris-gameplay-central
   namespace: argocd
+  labels:
+    component: tetris-app
   annotations:
     argocd.argoproj.io/sync-wave: "4"
 spec:
@@ -148,6 +154,8 @@ kind: Application
 metadata:
   name: tetris-scoring
   namespace: argocd
+  labels:
+    component: tetris-app
   annotations:
     argocd.argoproj.io/sync-wave: "4"
 spec:
@@ -192,6 +200,8 @@ kind: Application
 metadata:
   name: tetris-platform
   namespace: argocd
+  labels:
+    component: tetris-app
   annotations:
     argocd.argoproj.io/sync-wave: "4"
 spec:

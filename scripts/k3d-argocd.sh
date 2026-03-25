@@ -115,7 +115,7 @@ for i in "${!cluster_contexts[@]}"; do
         port_args+=(-p "${dash_port}:8090@loadbalancer")
     fi
     if [[ "$argocd_port" -gt 0 ]]; then
-        port_args+=(-p "${argocd_port}:8443@loadbalancer")
+        port_args+=(-p "${argocd_port}:443@loadbalancer")
     fi
 
     echo "Creating cluster: $cluster_name"
@@ -175,17 +175,7 @@ certificate_directory=$(mktemp -d)
 step certificate create root.linkerd.cluster.local "$certificate_directory/ca.crt" "$certificate_directory/ca.key" --profile root-ca --no-password --insecure --force
 step certificate create identity.linkerd.cluster.local "$certificate_directory/issuer.crt" "$certificate_directory/issuer.key" --ca "$certificate_directory/ca.crt" --ca-key "$certificate_directory/ca.key" --profile intermediate-ca --not-after 8760h --no-password --insecure --force
 
-echo "Applying Linkerd identity certificates to all clusters..."
-for context in "${cluster_contexts[@]}"; do
-    kubectl --context="$context" create namespace linkerd 2>/dev/null || true
-    kubectl --context="$context" -n linkerd create secret tls linkerd-identity-issuer \
-        --cert="$certificate_directory/issuer.crt" \
-        --key="$certificate_directory/issuer.key" \
-        --dry-run=client -o yaml | kubectl --context="$context" apply -f -
-    kubectl --context="$context" -n linkerd create configmap linkerd-identity-trust-roots \
-        --from-file=ca-bundle.crt="$certificate_directory/ca.crt" \
-        --dry-run=client -o yaml | kubectl --context="$context" apply -f -
-done
+echo "Certificate values will be injected into Argo CD manifests..."
 
 # ============================================================
 # Build and import container images
@@ -226,15 +216,15 @@ done
 # ============================================================
 
 echo "Installing Argo CD on the platform cluster..."
-kubectl --context=k3d-platform create namespace argocd 2>/dev/null || true
-kubectl --context=k3d-platform apply -n argocd \
-    -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-echo "Waiting for Argo CD server to be ready..."
-kubectl --context=k3d-platform -n argocd rollout status deploy argocd-server --timeout=3m
-
-echo "Exposing Argo CD UI via LoadBalancer on port 9091..."
-kubectl --context=k3d-platform -n argocd patch svc argocd-server \
-    -p '{"spec": {"type": "LoadBalancer", "ports": [{"name": "https", "port": 8443, "targetPort": 8080, "protocol": "TCP"}]}}'
+helm repo add argo https://argoproj.github.io/argo-helm
+helm repo update argo
+helm install argocd argo/argo-cd \
+    --kube-context=k3d-platform \
+    --namespace argocd \
+    --create-namespace \
+    --set server.service.type=LoadBalancer \
+    --wait \
+    --timeout 3m
 
 # ============================================================
 # Register remote clusters with Argo CD
@@ -314,6 +304,21 @@ done
 
 # Platform cluster uses in-cluster URL
 sed -i.bak "s|https://platform:6443|https://kubernetes.default.svc|g" "$argo_temp"/*.yaml
+
+# Inject certificate values into the Linkerd control-plane ApplicationSet
+CERT_DIR="$certificate_directory" perl -i -pe '
+    BEGIN {
+        sub slurp { local $/; open my $f, "<", $_[0] or die $!; <$f> }
+        $dir = $ENV{CERT_DIR};
+        $trust = slurp("$dir/ca.crt");
+        $crt   = slurp("$dir/issuer.crt");
+        $key   = slurp("$dir/issuer.key");
+        for ($trust, $crt, $key) { chomp; s/\n/\\n/g; $_ = qq{"$_"} }
+    }
+    s/REPLACE_TRUST_ANCHOR_PEM/$trust/g;
+    s/REPLACE_ISSUER_CRT_PEM/$crt/g;
+    s/REPLACE_ISSUER_KEY_PEM/$key/g;
+' "$argo_temp/linkerd-control-plane.yaml"
 rm -f "$argo_temp"/*.bak
 
 echo "Applying Argo CD manifests..."

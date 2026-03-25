@@ -23,6 +23,8 @@ spec:
   template:
     metadata:
       name: "linkerd-control-plane-{{ .cluster }}"
+      labels:
+        component: linkerd-control-plane
       annotations:
         argocd.argoproj.io/sync-wave: "2"
     spec:
@@ -33,11 +35,12 @@ spec:
         targetRevision: "*"
         helm:
           valuesObject:
+            identityTrustAnchorsPEM: REPLACE_TRUST_ANCHOR_PEM
             identity:
-              externalCA: true
               issuer:
-                scheme: kubernetes.io/tls
-            identityTrustAnchorsPEM: ""
+                tls:
+                  crtPEM: REPLACE_ISSUER_CRT_PEM
+                  keyPEM: REPLACE_ISSUER_KEY_PEM
       destination:
         server: "{{ .server }}"
         namespace: linkerd
@@ -48,14 +51,3 @@ spec:
         syncOptions:
           - CreateNamespace=true
           - ServerSideApply=true
-      ignoreDifferences:
-        - group: ""
-          kind: Secret
-          name: linkerd-identity-issuer
-          jsonPointers:
-            - /data
-        - group: ""
-          kind: ConfigMap
-          name: linkerd-identity-trust-roots
-          jsonPointers:
-            - /data

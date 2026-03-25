@@ -7,8 +7,7 @@ spec:
   description: Tetris Rush — Linkerd multicluster demo
   sourceRepos:
     - "https://github.com/kubernetes-sigs/gateway-api"
-    - "https://helm.linkerd.io/edge"
-    - "https://helm.linkerd.io/stable"
+    - "https://helm.buoyant.cloud"
     # Update this to your actual repo URL
     - "https://github.com/GTRekter/linkerd-tetris-rush.git"
   destinations:

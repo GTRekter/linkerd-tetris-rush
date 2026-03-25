@@ -19,7 +19,7 @@ spec:
         {{- include "tetris.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: redis
       annotations:
-        linkerd.io/inject: disabled
+        linkerd.io/inject: enabled
     spec:
       containers:
         - name: redis
@@ -47,6 +47,7 @@ metadata:
   labels:
     {{- include "tetris.labels" . | nindent 4 }}
     app.kubernetes.io/component: redis
+    mirror.linkerd.io/exported: "true"
 spec:
   type: LoadBalancer
   ports:
