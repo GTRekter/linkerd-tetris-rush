@@ -14,7 +14,7 @@ GET /api/next-piece?player_id=...
 
 This request travels through the Linkerd service mesh. The federated `game-api` service aggregates endpoints from all linked gameplay clusters, and Linkerd load-balances across them. Each piece that arrives on a player's board carries a cluster badge showing which gameplay cluster served it, plus the actual measured latency.
 
-When attendees scan the QR code, they hit the dashboard's `/go` endpoint which distributes them across different gameplay cluster frontends using round-robin (see [architecture.md](architecture.md) for the full redirect flow). This means different players are initially connected to different clusters, making the multicluster behavior visible even before traffic splitting is demonstrated.
+When attendees scan the QR code, they hit the dashboard's `/go` endpoint which distributes them across different gameplay cluster frontends using random selection (see [architecture.md](architecture.md) for the full redirect flow). This means different players are initially connected to different clusters, making the multicluster behavior visible even before traffic splitting is demonstrated.
 
 Player registration, scoring, and leaderboard data all flow through a second cross-cluster call path: game-api on each gameplay cluster calls the leaderboard-api on the dedicated scoring cluster. This is a hard dependency — if the scoring cluster is down, joins and score submissions fail with 503.
 
@@ -26,7 +26,7 @@ For the complete request flow diagrams, Redis data model, and component architec
 
 ## Module 1 — Traffic Split
 
-**What it showcases:** Linkerd's `TrafficSplit` SMI resource for weighted traffic distribution across multiple backends.
+**What it showcases:** Linkerd's `HTTPRoute` (Gateway API) resource for weighted traffic distribution across multiple backends.
 
 ### What happens in the cluster
 
@@ -108,7 +108,7 @@ When the presenter disables mTLS on a gameplay cluster from the dashboard, the b
 
 ```python
 if not game_state.mtls_enabled:
-    if random.random() < 0.6:   # 60% of pieces tampered
+    if random.random() < 0.8:   # 80% of pieces tampered
         corrupted = True
         alts = [p for p in PIECE_TYPES if p != piece_type]
         piece_type = random.choice(alts)
@@ -181,7 +181,7 @@ The piece feed on the player's board shows "DENIED" entries for rejected request
 
 The presenter clicks "Kill" on a gameplay cluster card. This scales the game-api deployment down to 0 replicas. The killed services referenced in the `HTTPRoute` will be processed by the proxy. Because they have no endpoints, it zeros out the weight for that backend and tries the next one.
 
-Clicking "Revive" scales the game-api back up to 1. Linkerd detects endpoints returning and gradually re-includes the cluster in traffic routing.
+Clicking "Revive" scales the game-api back up to 2 replicas. Linkerd detects endpoints returning and gradually re-includes the cluster in traffic routing.
 
 ### What players see
 
@@ -223,25 +223,19 @@ curl -X POST http://localhost:8000/api/admin/toggle-egress \
 
 The dashboard exposes three multicluster modes — **Federated**, **Mirrored**, and **Gateway** — switchable at runtime. Each mode changes the `game-api` Service label and reconfigures the HTTPRoute that controls cross-cluster traffic routing.
 
-In all three modes, the `game` proxy targets `game-api`. An HTTPRoute attached to `game-api` determines where traffic actually goes.
+In mirrored and gateway modes, the `game` proxy targets `game-api` and an HTTPRoute attached to `game-api` determines where traffic actually goes. In federated mode, the `game` targets `game-api-federated` directly — no HTTPRoute is needed.
 
 ### Federated
 
 **Service label:** `mirror.linkerd.io/federated: member`
 
-Linkerd creates a virtual `game-api-federated` service that aggregates endpoints from all linked gameplay clusters. The HTTPRoute routes `game-api` -> `game-api-federated`:
-
-```yaml
-backendRefs:
-  - name: game-api-federated
-    weight: 1
-```
+Linkerd creates a virtual `game-api-federated` service that aggregates endpoints from all linked gameplay clusters. The `game` targets `game-api-federated` directly — no HTTPRoute is deployed. Linkerd's P2C + PeakEwma balancer distributes traffic across all pod endpoints from every cluster.
 
 This is the simplest mode — Linkerd handles everything automatically.
 
 ### Mirrored
 
-**Service label:** `mirror.linkerd.io/remote-discovery: member`
+**Service label:** `mirror.linkerd.io/exported: remote-discovery`
 
 Linkerd mirrors `game-api` into linked clusters. Traffic flows **pod-to-pod** directly, without going through multicluster gateways. The HTTPRoute splits equally across local and mirrored backends:
 
@@ -314,5 +308,7 @@ The active scenario is stored per-cluster in `GameState.active_scenario`. Switch
 | `mtls_enabled` | bool | `true` | `toggle-mtls` |
 | `auth_policy_enabled` | bool | `false` | `toggle-auth-policy` |
 | `egress_enabled` | bool | `false` | `toggle-egress` |
-| `multicluster_mode` | string | `federated` | `set-mode` |
+| `failure_enabled` | bool | `false` | `toggle-failure` |
+| `auth_deny_rate` | float | `0.35` | `toggle-auth-policy` |
+| `multicluster_mode` | string | `federated` | `set-mode` (read-time default, not seeded in Redis) |
 | `traffic_weights` | dict | `{}` | `set-weights` |
