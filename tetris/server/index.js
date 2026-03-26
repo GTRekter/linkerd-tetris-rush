@@ -29,7 +29,7 @@ function reportDenied() {
   req.end();
 }
 
-// Current multicluster mode and mTLS state — polled from the local game-api
+// Current multicluster mode and mTLS state — polled from the local agent
 let currentMode = 'federated';
 let mtlsEnabled = true;
 
@@ -40,39 +40,52 @@ function activeTarget() {
   return currentMode === 'federated' ? API_TARGET_FEDERATED : API_TARGET;
 }
 
-// Poll /api/info on the local game-api to track the current mode
-function pollMode() {
-  const local = new URL(API_TARGET);
-  const opts = {
-    hostname: local.hostname,
-    port: local.port || 80,
-    path: '/api/info',
-    method: 'GET',
-    timeout: 3000,
-  };
+// Parse mode and mTLS from an /api/info JSON response body
+function applyInfo(body) {
+  try {
+    const data = JSON.parse(body);
+    if (data.multicluster_mode) {
+      currentMode = data.multicluster_mode;
+    }
+    if (data.mtls_enabled !== undefined) {
+      mtlsEnabled = data.mtls_enabled !== false;
+    }
+    return true;
+  } catch { return false; }
+}
 
-  const req = http.request(opts, (res) => {
-    let body = '';
-    res.on('data', (chunk) => { body += chunk; });
-    res.on('end', () => {
-      try {
-        const data = JSON.parse(body);
-        if (data.multicluster_mode) {
-          currentMode = data.multicluster_mode;
-        }
-        if (data.mtls_enabled !== undefined) {
-          mtlsEnabled = data.mtls_enabled !== false;
-        }
-      } catch { /* ignore parse errors */ }
+// Fetch /api/info from a given base URL; resolves true on success
+function fetchInfo(baseUrl) {
+  return new Promise((resolve) => {
+    const u = new URL(baseUrl);
+    const opts = {
+      hostname: u.hostname,
+      port: u.port || 80,
+      path: '/api/info',
+      method: 'GET',
+      timeout: 3000,
+    };
+    const req = http.request(opts, (res) => {
+      let body = '';
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => resolve(applyInfo(body)));
     });
+    req.on('error', () => resolve(false));
+    req.end();
   });
-  req.on('error', () => { /* local api not ready yet */ });
-  req.end();
+}
+
+// Poll /api/info from the agent (always running) to track the current mode.
+// The agent is the authoritative owner of multicluster_mode — it writes it to
+// Redis and is never killed during cluster-failure scenarios.  Falls back to
+// game-api only for local dev where AGENT_URL is not set.
+async function pollMode() {
+  await fetchInfo(AGENT_URL || API_TARGET);
 }
 
 // Start polling once the server is up
 setInterval(pollMode, 3000);
-setTimeout(pollMode, 1000);
+setTimeout(pollMode, 200);
 
 // Proxy /api/* to game-api or game-api-federated based on current mode.
 app.all('/api/*', (req, res) => {
