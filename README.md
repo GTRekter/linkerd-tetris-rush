@@ -2,6 +2,28 @@
 
 A live demo platform for showcasing Linkerd's multi-cluster service mesh capabilities through an interactive Tetris game. Players join via QR code, play Tetris across a distributed cluster topology, and a presenter dashboard visualizes traffic flows, mesh scenarios, and cluster health in real time.
 
+## Screenshots
+
+### Player Login
+Players join by scanning the dashboard QR code and entering their name.
+
+![Player Login](assets/login.png)
+
+### Tetris Gameplay
+The game board with score tracking, level progression, next piece preview, and a live leaderboard.
+
+![Tetris Gameplay](assets/game.png)
+
+### Presenter Dashboard
+Real-time overview of cluster health, traffic distribution, scenario controls, leaderboard, and event log.
+
+![Presenter Dashboard](assets/dashboard.png)
+
+### Argo CD
+GitOps deployment view showing all applications across clusters (when using the `k3d-argocd.sh` setup script).
+
+![Argo CD](assets/argo.png)
+
 ## Components
 
 | Component | Language | Framework | Purpose |
@@ -88,7 +110,7 @@ When disabled:
 Can be enabled selectively on each gameplay cluster via a slider (0-3000ms). When enabled:
 - The `game-api` injects artificial sleep per request, up to the configured milliseconds.
 - Players see a `"Fetching piece..."` spinner and a latency badge on each piece showing the response time.
-- **Gateway/Remote-Discovery:** The latency keeps affecting the endpoints as they are blindly routed there. `RandomAvailableSelection` has no awareness of latency — each backend gets picked with equal probability regardless of how slow it is.
+- **Gateway/Remote-Discovery:** The latency keeps affecting the endpoints as they are blindly routed there. `RandomAvailableSelection` distributes requests according to configured backend weights with no awareness of latency — a slow backend receives the same share of traffic as a healthy one.
 - **Federated:** The selection of the endpoints is based on P2C + PeakEwma. If an endpoint is slow, PeakEwma records the higher RTT and P2C deprioritizes it, routing most requests to faster endpoints. Traffic is not completely cut off — P2C still occasionally picks the slower endpoint, but the majority shifts to healthy ones.
 
 ### Kill (No Endpoints)
@@ -98,7 +120,7 @@ When you click `Kill` or `Revive`, it scales the game-api deployment down to 0 o
 It will return 503 to all requests to the `game-api`.
 
 - **Gateway/Remote-Discovery:** `HTTPRoute` splits traffic across 3 backends with equal weight. RandomAvailableSelection randomly picks a backend. If it picks an endpoint of a service with failure injection enabled, it returns 503, then the `game` retries. Circuit-breaking one gateway IP takes out the entire cluster's traffic for that backend, as it applies to the gateway.
-- **Federated:** All endpoints from all clusters are unioned into a single P2C balancer pool. If P2C picks an endpoint with failure injection enabled, it returns 503, then the `game` retries. Circuit-breaking is per-pod, so only the specific failing pods get ejected while healthy pods in the same cluster continue serving. By default, the proxy is not aware of 503 status codes in responses. However, failure accrual can be configured with:
+- **Federated:** All endpoints from all clusters are unioned into a single P2C balancer pool. If P2C picks an endpoint with failure injection enabled, it returns 503, then the `game` retries. Circuit-breaking is per-pod, so only the specific failing pods get ejected while healthy pods in the same cluster continue serving. By default, the proxy does not have failure accrual enabled, so 503 responses pass through without triggering circuit breaking. However, failure accrual can be configured with:
 
 ```
 kubectl annotate svc game-api-federated -n tetris \
