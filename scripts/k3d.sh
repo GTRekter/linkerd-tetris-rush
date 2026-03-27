@@ -353,6 +353,7 @@ helm --kube-context="$platform_context" upgrade --install tetris "$directory_roo
     --set "leaderboardApi.enabled=false" \
     --set "redis.deploy=false" \
     --set "redis.url=redis://${redis_lb_ip}:6379" \
+    --set "leaderboardApiUrl=http://leaderboard-api-scoring.${application_namespace}.svc.cluster.local" \
     --set "cluster.name=platform" \
     --set "cluster.region=platform" \
     --set "cluster.color=#10b981" \

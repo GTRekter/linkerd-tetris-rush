@@ -623,7 +623,31 @@ app.post('/api/admin/set-mode', async (req, res) => {
       return res.status(400).json({ error: `invalid mode: ${mode}. Must be federated, mirrored, or gateway` });
     }
 
-    // Stream progress steps as NDJSON
+    // When the request was forwarded by another agent, do local work only
+    // and return plain JSON (proxyScale expects a single JSON response).
+    const propagated = req.body.propagated === true;
+
+    if (propagated) {
+      // --- Propagated request: local k8s work only, plain JSON response ---
+      try {
+        await patchServiceMode(mode);
+      } catch (k8sErr) {
+        if (!k8sErr.message || !k8sErr.message.includes('404')) throw k8sErr;
+      }
+      if (mode === 'federated') {
+        try { await deleteHTTPRoute(); } catch (k8sErr) {
+          if (!k8sErr.message || !k8sErr.message.includes('404')) throw k8sErr;
+        }
+      } else {
+        try { await createOrPatchHTTPRoute(mode); } catch (k8sErr) {
+          if (!k8sErr.message || !k8sErr.message.includes('404')) throw k8sErr;
+        }
+      }
+      await pushLog(CLUSTER_NAME, `Multicluster mode set to ${mode} (propagated)`);
+      return res.json({ status: 'ok', cluster: CLUSTER_NAME, mode });
+    }
+
+    // --- Original request from the dashboard: stream NDJSON progress ---
     res.setHeader('Content-Type', 'application/x-ndjson');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Transfer-Encoding', 'chunked');
@@ -672,14 +696,14 @@ app.post('/api/admin/set-mode', async (req, res) => {
       }
     }
 
-    // Step 3: Propagate to remote clusters
+    // Step 3: Propagate to remote clusters (with propagated flag to prevent cascade)
     const names = await clusterNames();
     const remotes = names.filter(n => n !== CLUSTER_NAME);
     const proxyErrors = [];
     for (const remote of remotes) {
       sendStep(`Propagating to ${remote}`, 'running');
       try {
-        await proxyScale(remote, '/api/admin/set-mode', { ...req.body, cluster: remote });
+        await proxyScale(remote, '/api/admin/set-mode', { ...req.body, propagated: true });
         sendStep(`Propagating to ${remote}`, 'done');
       } catch (err) {
         console.error(`set-mode proxy to ${remote} failed:`, err.message);
