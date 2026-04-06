@@ -88,6 +88,22 @@ Builds the production Docker image and runs it locally:
 | Tetris UI | `http://localhost:8080` |
 | game-api | `http://localhost:8000` |
 
+### UI Preview Mode
+
+To inspect the game layout and styling without running the backend, add `?preview` to the URL:
+
+```
+http://localhost:3000/?preview
+```
+
+This renders the game board with mock data (pieces, locked rows, feed items) and skips the join screen entirely. Useful for:
+
+- Testing responsive layouts on different screen sizes
+- Iterating on CSS changes without needing Redis or game-api running
+- Verifying the mobile bottom bar and board sizing
+
+Preview mode has no effect on production — it only activates when the `preview` query parameter is present.
+
 ---
 
 ## Manual Setup
