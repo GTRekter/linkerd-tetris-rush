@@ -20,7 +20,7 @@ Real-time overview of cluster health, traffic distribution, scenario controls, l
 ![Presenter Dashboard](assets/dashboard.png)
 
 ### Argo CD
-GitOps deployment view showing all applications across clusters (when using the `k3d-argocd.sh` setup script).
+GitOps deployment view showing all applications across clusters (when using the `k3d-argocd.sh` or `azure-argo.sh` setup scripts).
 
 ![Argo CD](assets/argo.png)
 
@@ -55,13 +55,14 @@ linkerd-tetris-rush/
 ├── scripts/
 │   ├── k3d.sh               # Multi-cluster setup (direct Helm)
 │   ├── k3d-argocd.sh        # Multi-cluster setup (Argo CD)
+│   ├── azure-argo.sh         # Azure AKS multi-cluster setup (Argo CD)
 │   └── local-dev.sh         # Local development helper
 └── docs/                    # Architecture and deployment guides
 ```
 
 ## Cluster Architecture
 
-The project deploys across five domain-based K3d clusters, each owning a specific part of the application:
+The project deploys across five domain-based clusters (k3d locally or AKS on Azure), each owning a specific part of the application:
 
 | Cluster | Domain | Services | Purpose |
 |---------|--------|----------|---------|
@@ -167,7 +168,7 @@ The topology mode can be switched live from the dashboard using a dropdown.
 
 ## Endpoints
 
-After deployment, the following endpoints are available:
+### K3d (local)
 
 | Endpoint | URL | Description |
 |----------|-----|-------------|
@@ -177,14 +178,44 @@ After deployment, the following endpoints are available:
 | Presenter Dashboard | `http://platform.localhost:9090` | Admin dashboard |
 | Argo CD | `https://platform.localhost:9091` | GitOps UI (when using `k3d-argocd.sh`) |
 
+### Azure AKS
+
+Endpoints use dynamic LoadBalancer IPs assigned by Azure. The `azure-argo.sh` script prints all URLs at the end of execution. To retrieve them manually:
+
+```bash
+# Game endpoints
+for ctx in gameplay-east gameplay-west gameplay-central; do
+  IP=$(kubectl --context=$ctx -n tetris get svc game -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+  echo "$ctx → http://${IP}"
+done
+
+# Dashboard
+kubectl --context=platform -n tetris get svc dashboard -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+# Access at http://<IP>:8090
+
+# Argo CD
+kubectl --context=platform -n argocd get svc argocd-server -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+# Access at https://<IP>
+```
+
 ## Debug
 
-```
+K3d contexts use the `k3d-` prefix; Azure AKS contexts use the cluster name directly.
+
+```bash
+# K3d
 kubectl get pods,svc,httproute,server -n tetris --context k3d-gameplay-east
 kubectl get pods,svc,httproute,server -n tetris --context k3d-gameplay-west
 kubectl get pods,svc,httproute,server -n tetris --context k3d-gameplay-central
 kubectl get pods,svc,httproute,server -n tetris --context k3d-scoring
 kubectl get pods,svc,httproute,server -n tetris --context k3d-platform
+
+# Azure AKS
+kubectl get pods,svc,httproute,server -n tetris --context gameplay-east
+kubectl get pods,svc,httproute,server -n tetris --context gameplay-west
+kubectl get pods,svc,httproute,server -n tetris --context gameplay-central
+kubectl get pods,svc,httproute,server -n tetris --context scoring
+kubectl get pods,svc,httproute,server -n tetris --context platform
 ```
 
 ## Setup
@@ -192,6 +223,7 @@ kubectl get pods,svc,httproute,server -n tetris --context k3d-platform
 Refer to the detailed guides in `docs/`:
 - [Architecture](docs/architecture.md) — System design, request flows, and Redis data model
 - [K3d Deployment](docs/k3d-deployment.md) — Full k3d + Linkerd installation steps
+- [Azure AKS Deployment](docs/azure-deployment.md) — Azure AKS + Argo CD deployment on cloud
 - [Local Development](docs/local-development.md) — Setup and debugging
 - [Demo Modules](docs/modules.md) — Detailed scenario descriptions
 

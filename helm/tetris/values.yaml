@@ -67,6 +67,10 @@ redis:
 # Public URL shown in the QR code sidebar (game LoadBalancer)
 externalUrl: "https://rush.your-domain.com"
 
+# Dashboard public URL — used by the agent to generate the QR code and /go redirect.
+# On k3d this defaults to the dashboard LoadBalancer; on cloud set to the real IP/domain.
+dashboardUrl: ""
+
 # Admin token — use a Kubernetes secret or override at install time
 adminToken: "demo-admin-2024"
 
