@@ -22,15 +22,14 @@
     padding: 2px;
     backdrop-filter: blur(2px);
     -webkit-backdrop-filter: blur(2px);
-    /* Fill all available height below the nav.
-       Use dvh (dynamic viewport height) on mobile so the browser
-       chrome (address bar / bottom toolbar) is accounted for.       */
+    /* Fill available height below the nav, derive width explicitly
+       (aspect ratio 1:2 → width = height / 2) to avoid circular
+       sizing with auto-width parent columns on first paint.          */
     height: calc(100vh - 68px);
     height: calc(100dvh - 68px);
+    width: calc((100vh - 68px) / 2);
+    width: calc((100dvh - 68px) / 2);
     aspect-ratio: 1 / 2;
-    max-height: calc(100vh - 68px);
-    max-height: calc(100dvh - 68px);
-    max-width: 100%;
 }
 
 .tetris-cell {
