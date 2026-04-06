@@ -56,6 +56,7 @@ const PlayerPage = () => {
         <div
             className="player-bg tetris-page"
             onTouchStart={game.onTouchStart}
+            onTouchMove={game.onTouchMove}
             onTouchEnd={game.onTouchEnd}
             style={{ touchAction: 'none', userSelect: 'none' }}
         >

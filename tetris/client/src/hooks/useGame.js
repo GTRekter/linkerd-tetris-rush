@@ -40,6 +40,8 @@ export function useGame() {
     const dropTimerRef = useRef(null);
     const lastDropRef = useRef(0);
     const touchStartRef = useRef({ x: 0, y: 0, time: 0 });
+    const touchAccumRef = useRef({ x: 0, y: 0 }); // accumulated movement since last cell step
+    const touchMovedRef = useRef(false);            // true if finger moved enough to count as swipe
 
     // ---------------------------------------------------------------------------
     // Helpers
@@ -305,25 +307,62 @@ export function useGame() {
     // ---------------------------------------------------------------------------
     // Touch handlers
     // ---------------------------------------------------------------------------
-    const onTouchStart = (e) => {
+    const CELL_PX = 32;          // pixels of drag per one-cell move
+    const HARD_DROP_VELOCITY = 0.8; // px/ms threshold for fast swipe down
+
+    const onTouchStart = useCallback((e) => {
         const t = e.touches[0];
         touchStartRef.current = { x: t.clientX, y: t.clientY, time: Date.now() };
-    };
+        touchAccumRef.current = { x: 0, y: 0 };
+        touchMovedRef.current = false;
+    }, []);
 
-    const onTouchEnd = (e) => {
-        const t = e.changedTouches[0];
-        const dx = t.clientX - touchStartRef.current.x;
-        const dy = t.clientY - touchStartRef.current.y;
-        const dt = Date.now() - touchStartRef.current.time;
-        const dist = Math.hypot(dx, dy);
-        if (dist < 12 && dt < 200) tryRotate();
-        else if (Math.abs(dx) > Math.abs(dy)) {
-            if (dx > 25) tryMove(1, 0);
-            else if (dx < -25) tryMove(-1, 0);
-        } else {
-            if (dy > 25) hardDrop();
+    const onTouchMove = useCallback((e) => {
+        const t = e.touches[0];
+        const rawDx = t.clientX - touchStartRef.current.x;
+        const rawDy = t.clientY - touchStartRef.current.y;
+
+        if (Math.hypot(rawDx, rawDy) > 10) touchMovedRef.current = true;
+
+        // Horizontal movement — step one cell each CELL_PX of drag
+        const prevStepsX = Math.round(touchAccumRef.current.x / CELL_PX);
+        touchAccumRef.current.x = rawDx;
+        const newStepsX = Math.round(rawDx / CELL_PX);
+        const deltaX = newStepsX - prevStepsX;
+        if (deltaX !== 0) {
+            for (let i = 0; i < Math.abs(deltaX); i++) tryMove(deltaX > 0 ? 1 : -1, 0);
         }
-    };
+
+        // Vertical (soft drop) — step one cell each CELL_PX of downward drag
+        if (rawDy > 0) {
+            const prevStepsY = Math.max(0, Math.round(touchAccumRef.current.y / CELL_PX));
+            touchAccumRef.current.y = rawDy;
+            const newStepsY = Math.max(0, Math.round(rawDy / CELL_PX));
+            const deltaY = newStepsY - prevStepsY;
+            if (deltaY > 0) {
+                for (let i = 0; i < deltaY; i++) tryMove(0, 1);
+            }
+        } else {
+            touchAccumRef.current.y = rawDy;
+        }
+    }, [tryMove]);
+
+    const onTouchEnd = useCallback((e) => {
+        const t = e.changedTouches[0];
+        const dt = Date.now() - touchStartRef.current.time;
+
+        // Tap → rotate
+        if (!touchMovedRef.current && dt < 250) {
+            tryRotate();
+            return;
+        }
+
+        // Fast downward swipe → hard drop
+        const dy = t.clientY - touchStartRef.current.y;
+        if (dy > 40 && dt > 0 && (dy / dt) > HARD_DROP_VELOCITY) {
+            hardDrop();
+        }
+    }, [tryRotate, hardDrop]);
 
     // ---------------------------------------------------------------------------
     // Join / reset
@@ -372,6 +411,6 @@ export function useGame() {
         scenario, mtlsEnabled, authPolicyEnabled,
         statusMsg, nextPieceMeta, feed, leaderboard,
         onJoined, startNewGame, toggleLeaderboard,
-        onTouchStart, onTouchEnd,
+        onTouchStart, onTouchMove, onTouchEnd,
     };
 }

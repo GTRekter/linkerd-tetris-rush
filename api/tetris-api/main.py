@@ -32,7 +32,8 @@ from fastapi.responses import JSONResponse, Response
 CLUSTER_NAME = os.getenv("CLUSTER_NAME", "local-dev")
 CLUSTER_COLOR = os.getenv("CLUSTER_COLOR", "#3b82f6")
 CLUSTER_REGION = os.getenv("CLUSTER_REGION", "localhost")
-EXTERNAL_URL = os.getenv("EXTERNAL_URL", "http://localhost:8000")
+_raw_external_url = os.getenv("EXTERNAL_URL", "http://localhost:8000")
+EXTERNAL_URL = _raw_external_url if _raw_external_url.startswith(("http://", "https://")) else f"http://{_raw_external_url}"
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "demo-admin-2024")
 POD_NAME = os.getenv("HOSTNAME", socket.gethostname())
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")

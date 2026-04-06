@@ -15,7 +15,8 @@ const DEPLOYMENT_NAME = process.env.DEPLOYMENT_NAME || 'game-api';
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'demo-admin-2024';
 const CLUSTER_NAME = process.env.CLUSTER_NAME || 'local-dev';
-const DASHBOARD_URL = process.env.DASHBOARD_URL || 'http://localhost:8001';
+const _rawDashUrl = process.env.DASHBOARD_URL || 'http://localhost:8001';
+const DASHBOARD_URL = /^https?:\/\//.test(_rawDashUrl) ? _rawDashUrl : `http://${_rawDashUrl}`;
 const SERVICE_PORT = parseInt(process.env.SERVICE_PORT || '80');
 const HTTPROUTE_NAME = process.env.HTTPROUTE_NAME || 'game-api';
 const LEADERBOARD_API_URL = process.env.LEADERBOARD_API_URL || '';
@@ -550,7 +551,8 @@ app.get('/go', async (_req, res) => {
     const chosen = sorted[idx];
 
     const cluster = await redis.hgetall(k(chosen, 'game:cluster'));
-    const targetUrl = `${cluster.external_url || DASHBOARD_URL}/play`;
+    const base = cluster.external_url || DASHBOARD_URL;
+    const targetUrl = `${/^https?:\/\//.test(base) ? base : `http://${base}`}/play`;
 
     res.redirect(302, targetUrl);
   } catch (err) {
