@@ -7,12 +7,16 @@ A live demo platform for showcasing Linkerd's multi-cluster service mesh capabil
 ### Player Login
 Players join by scanning the dashboard QR code and entering their name.
 
-![Player Login](assets/login.png)
+| Desktop | Mobile |
+|---------|--------|
+| ![Player Login](assets/login.png) | ![Player Login Mobile](assets/login-mobile.png) |
 
 ### Tetris Gameplay
-The game board with score tracking, level progression, next piece preview, and a live leaderboard.
+The game board with score tracking, level progression, next piece preview, and a live leaderboard. On mobile, the sidebars are replaced by a compact inline bar at the bottom showing the next piece and recent feed.
 
-![Tetris Gameplay](assets/game.png)
+| Desktop | Mobile |
+|---------|--------|
+| ![Tetris Gameplay](assets/game.png) | ![Tetris Gameplay Mobile](assets/game-mobile.png) |
 
 ### Presenter Dashboard
 Real-time overview of cluster health, traffic distribution, scenario controls, leaderboard, and event log.
