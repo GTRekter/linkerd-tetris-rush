@@ -3,8 +3,13 @@
 .tetris-board-wrap {
     position: relative;
     height: 100%;
+    width: 100%;
     display: flex;
     align-items: center;
+    justify-content: center;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
 }
 
 .tetris-board {
@@ -17,9 +22,15 @@
     padding: 2px;
     backdrop-filter: blur(2px);
     -webkit-backdrop-filter: blur(2px);
-    /* Fill all available height below the nav */
+    /* Fill all available height below the nav.
+       Use dvh (dynamic viewport height) on mobile so the browser
+       chrome (address bar / bottom toolbar) is accounted for.       */
     height: calc(100vh - 68px);
+    height: calc(100dvh - 68px);
     aspect-ratio: 1 / 2;
+    max-height: calc(100vh - 68px);
+    max-height: calc(100dvh - 68px);
+    max-width: 100%;
 }
 
 .tetris-cell {

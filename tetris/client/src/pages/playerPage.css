@@ -34,6 +34,7 @@
 
 .tetris-row {
     height: 100vh;
+    height: 100dvh;
     padding-top: 68px; /* clear the sticky nav */
 }
 
@@ -72,7 +73,134 @@
     to   { transform: translateX(0);    opacity: 1; }
 }
 
+/* ── Mobile bottom bar ────────────────────────────────────────────────────── */
+
+.tetris-mobile-bottom {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    padding: 4px 8px;
+    padding-bottom: max(4px, env(safe-area-inset-bottom));
+    background: rgba(6, 8, 18, 0.88);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* ── Compact inline piece bar ────────────────────────────────────────────── */
+
+.compact-piece-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.7rem;
+    line-height: 1;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.compact-piece-next {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.compact-label {
+    font-size: 0.55rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: rgba(255, 255, 255, 0.45);
+    text-transform: uppercase;
+}
+
+.compact-piece-letter {
+    font-size: 0.9rem;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.compact-cluster {
+    font-size: 0.55rem !important;
+    padding: 1px 5px !important;
+    color: #fff;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 80px;
+    display: inline-block;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.compact-latency {
+    font-size: 0.6rem;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.compact-sep {
+    width: 1px;
+    height: 14px;
+    background: rgba(255, 255, 255, 0.15);
+    flex-shrink: 0;
+}
+
+.compact-feed-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex-shrink: 1;
+    min-width: 0;
+    font-size: 0.7rem;
+}
+
+.compact-feed-item .compact-cluster {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 72px;
+}
+
+.compact-denied-text {
+    color: #ef4444;
+    font-size: 0.6rem;
+    font-weight: 600;
+}
+
+.compact-badge-danger {
+    color: #ef4444;
+    font-weight: 700;
+    font-size: 0.65rem;
+}
+
+.compact-badge-warn {
+    font-size: 0.5rem;
+    color: #fbbf24;
+    font-weight: 600;
+}
+
+.compact-warn-icon {
+    font-size: 0.55rem;
+}
+
 /* ── Responsive ───────────────────────────────────────────────────────────── */
+
+@media (max-width: 767.98px) {
+    .tetris-row {
+        padding-top: 56px;
+        padding-bottom: 36px; /* space for slim mobile bottom bar */
+    }
+
+    /* Board is 10 × 20 → aspect-ratio 1 / 2 (width : height).
+       Available height = 100dvh − nav(56px) − bottom-bar(36px).
+       Max width from height = available_height / 2.
+       Also cap at viewport width.
+       This guarantees the board + aspect-ratio never overflows. */
+    .tetris-board {
+        width: min(calc((100dvh - 56px - 36px) / 2), calc(100vw - 16px)) !important;
+        height: auto !important;
+    }
+}
 
 @media (min-width: 768px) and (max-width: 1199px) {
     .tetris-col-sidebar {
